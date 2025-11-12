@@ -214,27 +214,53 @@ chart = pd.DataFrame([
     for s in ["ACT", "COM", "VIP"]
 ])
 
-# Define Pioneer-style color palette
+# Pioneer palette: ACT=Blue, COM=Green, VIP=Gray
 color_scale = alt.Scale(
     domain=["ACT", "COM", "VIP"],
-    range=["#49d0ff", "#3ddc97", "#b8c2cc"]  # Blue, Green, Neutral Gray
+    range=["#49d0ff", "#3ddc97", "#b8c2cc"]
 )
 
 l, r2 = st.columns(2)
 
 with l:
     st.markdown("**Revenue Share**")
-    pie = (
+
+    # Compute percent-of-total for labels
+    pie_base = (
         alt.Chart(chart)
+        .transform_joinaggregate(total="sum(Revenue)")
+        .transform_calculate(pct="datum.Revenue / datum.total")
+        .properties(width=300, height=300)
+    )
+
+    pie_arcs = (
+        pie_base
         .mark_arc(innerRadius=60)
         .encode(
             theta="Revenue:Q",
             color=alt.Color("Status:N", scale=color_scale, legend=None),
-            tooltip=["Status", "Revenue", "Customers", "ARPU"]
+            tooltip=[
+                alt.Tooltip("Status:N"),
+                alt.Tooltip("Revenue:Q", format="$.2f"),
+                alt.Tooltip("Customers:Q", format=",.0f"),
+                alt.Tooltip("ARPU:Q", format="$.2f", title="ARPU"),
+                alt.Tooltip("pct:Q", format=".1%", title="Share")
+            ]
         )
-        .properties(width=300, height=300)
     )
-    st.altair_chart(pie, use_container_width=True)
+
+    pie_labels = (
+        pie_base
+        .mark_text(radius=95, fontSize=12, fontWeight="bold", color="white")
+        .encode(
+            theta="Revenue:Q",
+            text=alt.Text("label:N"),
+            # Build "ACT 55.0%" style labels
+        )
+        .transform_calculate(label="datum.Status + ' ' + format(datum.pct, '.1%')")
+    )
+
+    st.altair_chart(pie_arcs + pie_labels, use_container_width=True)
 
 with r2:
     st.markdown("**Active Customers by Status**")
@@ -242,14 +268,20 @@ with r2:
         alt.Chart(chart)
         .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
         .encode(
-            x="Status:N",
-            y="Customers:Q",
+            x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
+            y=alt.Y("Customers:Q"),
             color=alt.Color("Status:N", scale=color_scale, legend=None),
-            tooltip=["Status", "Customers", "Revenue", "ARPU"]
+            tooltip=[
+                alt.Tooltip("Status:N"),
+                alt.Tooltip("Customers:Q", format=",.0f"),
+                alt.Tooltip("Revenue:Q", format="$.2f"),
+                alt.Tooltip("ARPU:Q", format="$.2f")
+            ]
         )
         .properties(width=300, height=300)
     )
     st.altair_chart(bar, use_container_width=True)
+
 
 
 # =========================================================
