@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import streamlit as st
 
-# Charts for the dashboard (interactive)
+# Charts
 import altair as alt
 
 # Static images for snapshot exports
@@ -29,11 +29,24 @@ st.markdown("""
 <style>
 :root, .stApp { background-color: #0f1115; color: #e6e6e6; }
 section[data-testid="stSidebar"] { background: #0c0e12; }
+
+/* default st.metric cards (top row) */
 [data-testid="stMetric"] { background: #151924; border: 1px solid #1e2331; padding: 16px; border-radius: 14px; }
 [data-testid="stMetricValue"] { color: #49d0ff; font-weight: 700; }
 [data-testid="stMetricLabel"] { color: #b8c2cc; }
 [data-testid="stMetricDelta"] { color: #a3ffd6; }
+
+/* tables */
 .stDataFrame, .stTable { background: #121620; }
+
+/* custom KPI boxes (ACT/COM/VIP) */
+.kpi-box {
+  background-color:#151924; border:1px solid #1e2331; border-radius:14px;
+  padding:16px; margin-bottom:5px; text-align:center;
+}
+.kpi-title { margin:0; font-size:16px; color:#b8c2cc; }
+.kpi-value { margin:0; font-size:28px; font-weight:700; color:#49d0ff; }
+.kpi-sub { margin:4px 0 0 0; font-size:14px; color:#a3ffd6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,14 +124,15 @@ def build_snapshot_figure(period_label: str, grand: Dict, by_status: Dict) -> Fi
     ax_left = fig.add_axes([0.07, 0.15, 0.42, 0.60])
     ax_right = fig.add_axes([0.57, 0.15, 0.36, 0.60])
 
-    avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0.0
+    # Overall ARPU
+    overall_arpu = (grand["amt"] / grand["act"]) if grand["act"] else 0.0
     act_rpc = by_status["ACT"]["amt"] / by_status["ACT"]["act"] if by_status["ACT"]["act"] else 0.0
     com_rpc = by_status["COM"]["amt"] / by_status["COM"]["act"] if by_status["COM"]["act"] else 0.0
     vip_rpc = by_status["VIP"]["amt"] / by_status["VIP"]["act"] if by_status["VIP"]["act"] else 0.0
 
     lines = [
         f"Subscriber KPI Snapshot — {period_label}",
-        f"Grand Active: {grand['act']:,}   |   Grand Revenue: ${grand['amt']:,.2f}   |   Avg Rev / Active: ${avg_rev:,.2f}",
+        f"Grand Active: {grand['act']:,}   |   Grand Revenue: ${grand['amt']:,.2f}   |   ARPU: ${overall_arpu:,.2f}",
         (f"ACT: {by_status['ACT']['act']:,}  Rev ${by_status['ACT']['amt']:,.2f}  ARPU ${act_rpc:,.2f}   "
          f"COM: {by_status['COM']['act']:,}  Rev ${by_status['COM']['amt']:,.2f}  ARPU ${com_rpc:,.2f}   "
          f"VIP: {by_status['VIP']['act']:,}  Rev ${by_status['VIP']['amt']:,.2f}  ARPU ${vip_rpc:,.2f}")
@@ -213,27 +227,33 @@ period_label = current["period"]
 grand = current["grand"]
 by_status = current["by_status"]
 
-# --- OVERALL KPI CARDS (FIRST LINE)
-avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0
+# --- OVERALL KPI CARDS (FIRST LINE) ---
+overall_arpu = (grand["amt"] / grand["act"]) if grand["act"] else 0
 g1, g2, g3 = st.columns(3)
 g1.metric("Grand Total Active", f"{grand['act']:,}")
 g2.metric("Grand Total Revenue", f"${grand['amt']:,.2f}")
-g3.metric("Avg Revenue / Active", f"${avg_rev:,.2f}")
+g3.metric("ARPU", f"${overall_arpu:,.2f}")  # renamed
 
 st.divider()
 
-# --- KPI CARDS (Status) with ARPU inside each box (SECOND LINE)
-def metric_block(col, title, act, amt, rpc):
-    # Value = Active subs; Delta shows both Revenue and ARPU in one box
-    col.metric(title, f"{act:,}", delta=f"Rev ${amt:,.2f} • ARPU ${rpc:,.2f}")
+# --- KPI CARDS (Status) with ARPU in the same box (SECOND LINE, no arrows) ---
+def metric_box(col, title, act, amt, rpc):
+    html = f"""
+    <div class="kpi-box">
+        <p class="kpi-title">{title}</p>
+        <p class="kpi-value">{act:,}</p>
+        <p class="kpi-sub">Rev ${amt:,.2f} • ARPU ${rpc:,.2f}</p>
+    </div>
+    """
+    col.markdown(html, unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
-metric_block(c1, "ACT — Active Residential",
-             by_status["ACT"]["act"], by_status["ACT"]["amt"], by_status["ACT"]["rpc"])
-metric_block(c2, "COM — Active Commercial",
-             by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
-metric_block(c3, "VIP",
-             by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
+metric_box(c1, "ACT — Active Residential",
+           by_status["ACT"]["act"], by_status["ACT"]["amt"], by_status["ACT"]["rpc"])
+metric_box(c2, "COM — Active Commercial",
+           by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
+metric_box(c3, "VIP",
+           by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
 
 # =========================================================
 # CHARTS (CURRENT)
