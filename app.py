@@ -1,134 +1,120 @@
-import io, re, json
+import io
+import re
+import json
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Subscriber Totals (PDF → Counts & $)", page_icon="📄", layout="wide")
-st.title("📄 Subscriber Totals (PDF → Counts & $)")
-st.caption("Upload **Subscriber Counts v2** PDF. Counts come from status headers; revenue can be computed or manually overridden.")
+st.set_page_config(page_title="Subscriber Totals (Status-Grouped PDF)", page_icon="📄", layout="wide")
+st.title("📄 Subscriber Totals (Status-Grouped PDF)")
 
-uploaded = st.file_uploader("Upload PDF", type=["pdf"])
+uploaded = st.file_uploader("Upload the new 'Subscriber Counts v2' PDF (grouped by Customer Status)", type=["pdf"])
 
 def _clean_amt(s: str) -> float:
     return float(s.replace(",", "").replace("(", "-").replace(")", ""))
 
-def parse_counts_from_pdf(pdf_bytes: bytes):
-    """Return (grand_act:int, grand_amt:float|None, per_status: dict[status]->act_count)."""
+def parse_pdf(pdf_bytes: bytes):
+    """
+    Returns:
+      grand = {"act": int|None, "subs": int|None, "amt": float|None}
+      by_status = {"ACT": {"act": int, "amt": float}, "COM": {...}, "VIP": {...}}
+    Works for both:
+      - 'Grand Total: <subs> <act> $<amt>'
+      - '$<amt> <subs> <act> Total:'
+    and reads per-status rows like:
+      Customer Status ,"ACT","Active residential","3,727","3,727"$308,445.88
+    """
     import pdfplumber
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        full_text = "\n".join((page.extract_text() or "") for page in pdf.pages)
-    compact = re.sub(r"\s+", " ", full_text)
+        text = "\n".join((p.extract_text() or "") for p in pdf.pages)
 
-    # Grand totals (for display): "Grand Total: 4,309 4,309 $381,475.84"
-    grand_act = None
-    grand_amt = None
-    m_gt = re.search(r"Grand\s*Total\s*:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)", compact, re.IGNORECASE)
-    if m_gt:
-        grand_act = int(m_gt.group(2).replace(",", ""))
-        grand_amt = _clean_amt(m_gt.group(3))
+    compact = re.sub(r"\s+", " ", text)
 
-    # Parse counts per status strictly from header lines (robust)
-    # ACT counts
-    pat_act = re.compile(
-        r'Customer Status\s*",\s*"ACT"\s*,\s*"Active residential"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"',
+    # --- Per-status rows (direct) ---
+    by_status = {"ACT": {"act": 0, "amt": 0.0}, "COM": {"act": 0, "amt": 0.0}, "VIP": {"act": 0, "amt": 0.0}}
+    # Pattern: Customer Status ,"ACT","Active residential","3,727","3,727"$308,445.88
+    status_row = re.compile(
+        r'Customer Status\s*",\s*"(ACT|COM|VIP)"\s*,\s*"[A-Za-z ]+"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"\s*\$([0-9,.\(\)-]+)',
         re.IGNORECASE
     )
-    # COM counts
-    pat_com = re.compile(
-        r'Customer Status\s*",\s*"COM"\s*,\s*"Active Commercial"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"',
-        re.IGNORECASE
-    )
-    # VIP counts
-    pat_vip = re.compile(
-        r'Customer Status\s*",\s*"VIP"\s*,\s*"VIP"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"',
-        re.IGNORECASE
-    )
+    for m in status_row.finditer(compact):
+        status = m.group(1).upper()
+        # subs = m.group(2)  # not used; active = m.group(3)
+        act = int(m.group(3).replace(",", ""))
+        amt = _clean_amt(m.group(4))
+        by_status[status]["act"] += act
+        by_status[status]["amt"] += amt
 
-    # Use the second quoted number = Active Sub Count
-    act_count = sum(int(p[1].replace(",", "")) for p in pat_act.findall(compact))
-    com_count = sum(int(p[1].replace(",", "")) for p in pat_com.findall(compact))
-    vip_count = sum(int(p[1].replace(",", "")) for p in pat_vip.findall(compact))
+    # --- Grand Total: support both layouts ---
+    grand = {"subs": None, "act": None, "amt": None}
 
-    per_status_counts = {"ACT": act_count, "COM": com_count, "VIP": vip_count}
+    # Layout A: Grand Total: <subs> <act> $<amt>
+    m_a = re.search(r"Grand\s*Total\s*:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)", compact, re.IGNORECASE)
+    # Layout B: $<amt> <subs> <act> Total:
+    m_b = re.search(r"\$([0-9,.\(\)-]+)\s*([0-9,]+)\s+([0-9,]+)\s*Total\s*:", compact, re.IGNORECASE)
 
-    # If grand_act missing, fill from sum
-    if grand_act is None:
-        grand_act = sum(per_status_counts.values())
+    if m_a:
+        grand["subs"] = int(m_a.group(1).replace(",", ""))
+        grand["act"]  = int(m_a.group(2).replace(",", ""))
+        grand["amt"]  = _clean_amt(m_a.group(3))
+    elif m_b:
+        grand["amt"]  = _clean_amt(m_b.group(1))
+        grand["subs"] = int(m_b.group(2).replace(",", ""))
+        grand["act"]  = int(m_b.group(3).replace(",", ""))
 
-    return grand_act, grand_amt, per_status_counts
+    # Fallbacks if needed
+    if grand["act"] is None:
+        grand["act"] = sum(v["act"] for v in by_status.values())
+    if grand["amt"] is None:
+        grand["amt"] = sum(v["amt"] for v in by_status.values())
+
+    return grand, by_status
 
 if uploaded:
     try:
-        grand_act, grand_amt_from_pdf, per_status_counts = parse_counts_from_pdf(uploaded.read())
+        grand, by_status = parse_pdf(uploaded.read())
 
-        st.subheader("Counts (parsed from PDF)")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("ACT (Active Sub Count)", f"{per_status_counts['ACT']:,}")
-        c2.metric("COM (Active Sub Count)", f"{per_status_counts['COM']:,}")
-        c3.metric("VIP (Active Sub Count)", f"{per_status_counts['VIP']:,}")
-        c4.metric("Grand Total Active", f"{grand_act:,}")
+        # Top-level metrics
+        top1, top2, top3 = st.columns(3)
+        top1.metric("Grand Total Active Customers", f"{grand['act']:,}")
+        top2.metric("Grand Total Subs (if present)", f"{grand['subs']:,}" if grand["subs"] is not None else "—")
+        top3.metric("Grand Total Revenue", f"${grand['amt']:,.2f}")
 
-        # Revenue controls
-        st.subheader("Revenue by Status")
-        use_override = st.checkbox(
-            "Override revenue per status (recommended if the PDF doesn’t carry clean per-status $)",
-            value=True
+        # Status filter
+        st.sidebar.subheader("Filter by Status")
+        statuses = ["ACT", "COM", "VIP"]
+        selected = st.sidebar.multiselect("Statuses", statuses, default=statuses)
+
+        # Status table
+        df = pd.DataFrame(
+            [{"Status": s, "Active Sub Count": by_status[s]["act"], "Revenue": by_status[s]["amt"]} for s in statuses]
         )
-
-        # Defaults (computed unknown -> 0.0). You can set your official numbers here.
-        default_rev = {"ACT": 0.0, "COM": 0.0, "VIP": 0.0}
-        if use_override:
-            # Pre-fill with your provided values
-            act_rev = st.number_input("ACT Revenue ($)", value=308_445.88, step=0.01, format="%.2f")
-            com_rev = st.number_input("COM Revenue ($)", value=70_996.16, step=0.01, format="%.2f")
-            vip_rev = st.number_input("VIP Revenue ($)", value=1_994.18, step=0.01, format="%.2f")
-        else:
-            # If you later want to experiment with a computed method, leave placeholders = 0
-            act_rev = default_rev["ACT"]
-            com_rev = default_rev["COM"]
-            vip_rev = default_rev["VIP"]
-            st.info("Revenue left at 0.00 for now (no reliable per-status $ signals in the PDF text). Use the override toggle to set values.")
-
-        per_status_rev = {"ACT": act_rev, "COM": com_rev, "VIP": vip_rev}
-
-        # Final table
-        df = pd.DataFrame([
-            {"Status": s, "Active Sub Count": per_status_counts[s], "Revenue": per_status_rev[s]}
-            for s in ["ACT", "COM", "VIP"]
-        ])
-
+        st.subheader("Totals by Status")
         st.dataframe(df.style.format({"Revenue": "${:,.2f}"}), use_container_width=True)
 
-        # Filter
-        st.subheader("Filter")
-        chosen = st.multiselect("Statuses", ["ACT", "COM", "VIP"], default=["ACT", "COM", "VIP"])
-        filt_count = sum(per_status_counts[s] for s in chosen)
-        filt_rev = sum(per_status_rev[s] for s in chosen)
+        # Filtered totals
+        filt_act = sum(by_status[s]["act"] for s in selected)
+        filt_amt = sum(by_status[s]["amt"] for s in selected)
 
-        f1, f2, f3 = st.columns(3)
-        f1.metric("Filtered Active Sub Count", f"{filt_count:,}")
-        f2.metric("Filtered Revenue", f"${filt_rev:,.2f}")
-        if grand_amt_from_pdf is not None:
-            f3.metric("PDF Grand Total $ (for reference)", f"${grand_amt_from_pdf:,.2f}")
+        f1, f2 = st.columns(2)
+        f1.metric("Filtered Active Sub Count", f"{filt_act:,}")
+        f2.metric("Filtered Revenue", f"${filt_amt:,.2f}")
 
-        # Downloads
-        st.subheader("Export")
-        left, right = st.columns(2)
-        left.download_button(
+        # Exports
+        c1, c2 = st.columns(2)
+        c1.download_button(
             "Download CSV",
             df.to_csv(index=False).encode("utf-8"),
             file_name="status_totals.csv",
-            mime="text/csv",
+            mime="text/csv"
         )
-        right.download_button(
+        c2.download_button(
             "Download JSON",
             json.dumps(df.to_dict(orient="records"), indent=2),
             file_name="status_totals.json",
-            mime="application/json",
+            mime="application/json"
         )
-
-        st.success("Done.")
-        st.caption("Counts come from status headers in the PDF. Revenue per status is best set via override if the report template doesn’t print those dollars on each status row.")
+        st.success("Extraction complete.")
     except Exception as e:
-        st.error(f"Failed to parse the PDF: {e}")
+        st.error(f"Failed to parse PDF: {e}")
 else:
     st.info("Upload your PDF to begin.")
