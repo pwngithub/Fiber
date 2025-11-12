@@ -1,3 +1,4 @@
+# app.py
 import io
 import re
 import json
@@ -6,132 +7,124 @@ import streamlit as st
 
 st.set_page_config(page_title="Subscriber Totals Extractor", page_icon="📄", layout="wide")
 st.title("📄 Subscriber Totals Extractor")
-st.caption("Upload your **Subscriber Counts v2** PDF to extract Grand Totals and filter by ACT / VIP / COM.")
+st.caption("Upload your 'Subscriber Counts v2' PDF to extract Grand Totals and per-status counts & revenue (ACT / VIP / COM).")
 
 uploaded = st.file_uploader("Upload PDF", type=["pdf"])
 
-def clean_amount(s: str) -> float:
+def _clean_amt(s: str) -> float:
     return float(s.replace(",", "").replace("(", "-").replace(")", ""))
 
-def parse_pdf_bytes(pdf_bytes: bytes):
-    """
-    Returns:
-      grand = {"subs": int, "act": int, "amt": float}
-      by_status = dict like {"ACT": {"subs": int, "act": int, "amt": float}, ...}
-    """
+def _sum_status_counts(compact: str, status: str) -> int:
+    # STRICT patterns: read the two quoted numbers right after the status label
+    if status == "ACT":
+        pat = re.compile(r'Customer Status\s*",\s*"ACT"\s*,\s*"Active residential"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"', re.IGNORECASE)
+    elif status == "COM":
+        pat = re.compile(r'Customer Status\s*",\s*"COM"\s*,\s*"Active Commercial"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"', re.IGNORECASE)
+    else:  # VIP
+        pat = re.compile(r'Customer Status\s*",\s*"VIP"\s*,\s*"VIP"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"', re.IGNORECASE)
+    pairs = pat.findall(compact)
+    # Use the second number = Active Sub Count
+    return sum(int(p[1].replace(",", "")) for p in pairs)
+
+def _sum_status_revenue(compact: str):
+    # Tempered regex: within each status block, pick the first "Total: X Y $Z"
+    pat = re.compile(
+        r'Customer Status\s*",\s*"(ACT|VIP|COM)"(?:(?!Customer Status).)*?Total:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)',
+        re.IGNORECASE
+    )
+    res = {"ACT": 0.0, "VIP": 0.0, "COM": 0.0}
+    for m in pat.finditer(compact):
+        status = m.group(1).upper()
+        amt = _clean_amt(m.group(4))
+        res[status] += amt
+    return res
+
+def parse_pdf(pdf_bytes: bytes):
     import pdfplumber
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        full_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    # Normalize whitespace for regexes
+        full_text = "\n".join((page.extract_text() or "") for page in pdf.pages)
     compact = re.sub(r"\s+", " ", full_text)
 
-    # 1) GRAND TOTAL: "Grand Total: 4,309 4,309 $381,475.84"
+    # Grand Total: "Grand Total: 4,309 4,309 $381,475.84"
     grand = {"subs": None, "act": None, "amt": None}
-    m_gt = re.search(
-        r"Grand\s*Total\s*:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)",
-        compact, flags=re.IGNORECASE
-    )
+    m_gt = re.search(r"Grand\s*Total\s*:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)", compact, re.IGNORECASE)
     if m_gt:
         grand["subs"] = int(m_gt.group(1).replace(",", ""))
         grand["act"]  = int(m_gt.group(2).replace(",", ""))
-        grand["amt"]  = clean_amount(m_gt.group(3))
-    else:
-        # Fallback: use the largest $ as revenue and leave counts None if not found
-        dollars = [m.group(0) for m in re.finditer(r"\$[0-9][0-9,.\(\)-]*", compact)]
-        if dollars:
-            grand["amt"] = max(clean_amount(d[1:]) for d in dollars)
+        grand["amt"]  = _clean_amt(m_gt.group(3))
 
-    # 2) STATUS TOTALS: find "Customer Status ","ACT|VIP|COM" ... then nearest "Total: X Y $Z"
-    by_status = {"ACT": {"subs": 0, "act": 0, "amt": 0.0},
-                 "VIP": {"subs": 0, "act": 0, "amt": 0.0},
-                 "COM": {"subs": 0, "act": 0, "amt": 0.0}}
-    for m in re.finditer(
-        r'Customer Status\s*",\s*"(ACT|VIP|COM)".{0,160}?Total:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)',
-        compact, flags=re.IGNORECASE
-    ):
-        status = m.group(1).upper()
-        subs   = int(m.group(2).replace(",", ""))
-        act    = int(m.group(3).replace(",", ""))
-        amt    = clean_amount(m.group(4))
-        by_status[status]["subs"] += subs
-        by_status[status]["act"]  += act
-        by_status[status]["amt"]  += amt
+    # Per-status counts (robust against layout noise)
+    act_count = _sum_status_counts(compact, "ACT")
+    com_count = _sum_status_counts(compact, "COM")
+    vip_count = _sum_status_counts(compact, "VIP")
 
-    # If grand counts not found, try to sum statuses (should match)
-    if (grand["subs"] is None or grand["act"] is None) and any(by_status.values()):
-        grand["subs"] = sum(v["subs"] for v in by_status.values())
-        grand["act"]  = sum(v["act"] for v in by_status.values())
-    if grand["amt"] is None and any(by_status.values()):
+    # Per-status revenue (sums of $ in status blocks)
+    rev = _sum_status_revenue(compact)
+
+    # Build results
+    by_status = {
+        "ACT": {"act": act_count, "amt": rev.get("ACT", 0.0)},
+        "COM": {"act": com_count, "amt": rev.get("COM", 0.0)},
+        "VIP": {"act": vip_count, "amt": rev.get("VIP", 0.0)},
+    }
+
+    # Safety: if any totals are missing, fill from sums
+    if grand["act"] is None:
+        grand["act"] = act_count + com_count + vip_count
+    if grand["amt"] is None:
         grand["amt"] = sum(v["amt"] for v in by_status.values())
 
     return grand, by_status
 
 if uploaded:
     try:
-        grand, by_status = parse_pdf_bytes(uploaded.read())
+        grand, by_status = parse_pdf(uploaded.read())
 
         # Sidebar filter
         st.sidebar.subheader("Filter by Status")
-        statuses = ["ACT", "VIP", "COM"]
+        statuses = ["ACT", "COM", "VIP"]
         selected = st.sidebar.multiselect("Statuses", statuses, default=statuses)
 
-        # Compute filtered totals
-        filt_counts = {"subs": 0, "act": 0, "amt": 0.0}
-        for s in selected:
-            v = by_status.get(s, {"subs": 0, "act": 0, "amt": 0.0})
-            filt_counts["subs"] += v["subs"]
-            filt_counts["act"]  += v["act"]
-            filt_counts["amt"]  += v["amt"]
+        # Metrics: Grand totals
+        c1, c2 = st.columns(2)
+        c1.metric("Grand Total Active Customers", f"{grand['act']:,}")
+        c2.metric("Grand Total Revenue", f"${grand['amt']:,.2f}")
 
-        # Metrics row
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Grand Total Active Customers", f"{grand['act']:,}" if grand["act"] is not None else "—")
-        with col2:
-            st.metric("Grand Total Revenue", f"${grand['amt']:,.2f}" if grand["amt"] is not None else "—")
-        with col3:
-            st.metric("Filtered Revenue", f"${filt_counts['amt']:,.2f}")
-
-        # Status table
+        # Per-status table
         df = pd.DataFrame([
-            {"Status": s,
-             "Subs Count": by_status[s]["subs"],
-             "Active Sub Count": by_status[s]["act"],
-             "Revenue": by_status[s]["amt"]}
+            {"Status": s, "Active Sub Count": by_status[s]["act"], "Revenue": by_status[s]["amt"]}
             for s in statuses
         ])
         st.subheader("Totals by Status")
         st.dataframe(df.style.format({"Revenue": "${:,.2f}"}), use_container_width=True)
 
-        # Filtered totals card
+        # Filtered totals (by status)
+        filt_act = sum(by_status[s]["act"] for s in selected)
+        filt_amt = sum(by_status[s]["amt"] for s in selected)
+
         st.subheader("Filtered Totals")
-        st.write(
-            pd.DataFrame([{
-                "Selected Statuses": ", ".join(selected) if selected else "(none)",
-                "Active Sub Count": filt_counts["act"],
-                "Revenue": filt_counts["amt"],
-            }]).style.format({"Revenue": "${:,.2f}"})
-        )
+        st.metric("Active Sub Count (Filtered)", f"{filt_act:,}")
+        st.metric("Revenue (Filtered)", f"${filt_amt:,.2f}")
 
         # Downloads
-        c1, c2 = st.columns(2)
-        with c1:
+        a, b = st.columns(2)
+        with a:
             st.download_button(
                 "Download Status Totals (CSV)",
-                data=df.to_csv(index=False).encode("utf-8"),
-                file_name="status_totals.csv",
-                mime="text/csv",
+                df.to_csv(index=False).encode("utf-8"),
+                "status_totals.csv",
+                "text/csv"
             )
-        with c2:
+        with b:
             st.download_button(
                 "Download Status Totals (JSON)",
-                data=json.dumps(df.to_dict(orient="records"), indent=2),
-                file_name="status_totals.json",
-                mime="application/json",
+                json.dumps(df.to_dict(orient="records"), indent=2),
+                "status_totals.json",
+                "application/json"
             )
 
         st.success("Extraction complete.")
-        st.caption("Tip: If your PDF layout changes, the regex windows can be widened in the code.")
+        st.caption("Note: Counts are read from status headers; revenue comes from each status block’s Total line.")
     except Exception as e:
         st.error(f"Failed to parse PDF: {e}")
 else:
