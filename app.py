@@ -19,7 +19,7 @@ from matplotlib.figure import Figure
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.lib.utils import ImageReader  # <-- needed for drawImage
+from reportlab.lib.utils import ImageReader  # for drawImage on bytes
 
 # =========================================================
 # APP CONFIG + THEME
@@ -213,9 +213,18 @@ period_label = current["period"]
 grand = current["grand"]
 by_status = current["by_status"]
 
-# --- KPI CARDS (Status) with ARPU inside each box
+# --- OVERALL KPI CARDS (FIRST LINE)
+avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0
+g1, g2, g3 = st.columns(3)
+g1.metric("Grand Total Active", f"{grand['act']:,}")
+g2.metric("Grand Total Revenue", f"${grand['amt']:,.2f}")
+g3.metric("Avg Revenue / Active", f"${avg_rev:,.2f}")
+
+st.divider()
+
+# --- KPI CARDS (Status) with ARPU inside each box (SECOND LINE)
 def metric_block(col, title, act, amt, rpc):
-    # Value = Active subs; Delta line shows both Revenue and ARPU in one box
+    # Value = Active subs; Delta shows both Revenue and ARPU in one box
     col.metric(title, f"{act:,}", delta=f"Rev ${amt:,.2f} • ARPU ${rpc:,.2f}")
 
 c1, c2, c3 = st.columns(3)
@@ -225,15 +234,6 @@ metric_block(c2, "COM — Active Commercial",
              by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
 metric_block(c3, "VIP",
              by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
-
-# --- KPI CARDS (Overall)
-o1, o2, o3 = st.columns(3)
-avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0
-o1.metric("Grand Total Active", f"{grand['act']:,}")
-o2.metric("Grand Total Revenue", f"${grand['amt']:,.2f}")
-o3.metric("Avg Revenue / Active", f"${avg_rev:,.2f}")
-
-st.divider()
 
 # =========================================================
 # CHARTS (CURRENT)
