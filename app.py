@@ -1,3 +1,4 @@
+# app.py
 import io
 import re
 import json
@@ -18,7 +19,7 @@ from matplotlib.figure import Figure
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-
+from reportlab.lib.utils import ImageReader  # <-- IMPORTANT FIX
 
 # =========================================================
 # APP CONFIG + THEME
@@ -39,7 +40,6 @@ section[data-testid="stSidebar"] { background: #0c0e12; }
 st.title("📶 Subscriber KPI Dashboard")
 st.caption("Extracts ACT / COM / VIP counts & revenue from **Subscriber Counts v2** PDFs and visualizes KPIs. Upload one or multiple PDFs for trend lines.")
 
-
 # =========================================================
 # HELPERS
 # =========================================================
@@ -55,10 +55,7 @@ def _read_pdf_text(pdf_bytes: bytes) -> str:
         return "\n".join((p.extract_text() or "") for p in pdf.pages)
 
 def _extract_date_label(text: str, fallback_label: str) -> str:
-    """
-    Try to match 'Date: mm/dd/yyyy' anywhere in the PDF text.
-    If found, return ISO date 'YYYY-MM-DD'. Else, return fallback.
-    """
+    """Try to match 'Date: mm/dd/yyyy' in the PDF; return ISO date if found else fallback."""
     m = re.search(r"Date:\s*([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})", text, flags=re.IGNORECASE)
     if m:
         m_, d_, y_ = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -68,15 +65,13 @@ def _extract_date_label(text: str, fallback_label: str) -> str:
             pass
     return fallback_label
 
-def parse_one_pdf(pdf_bytes: bytes) -> Tuple[Dict, Dict]:
+def parse_one_pdf(pdf_bytes: bytes):
     """
-    Strategy tuned to your file:
+    Strategy (matches your file):
     - Find headers like: Customer Status ,"ACT","Active residential","3,727","3,727"
     - For each header, look BACKWARD ~300 chars to get the last $ amount before the header (status revenue)
     - Grand Total: "Total: <subs> <act> $<amt>"
-    Returns:
-        grand = {"subs": int|None, "act": int, "amt": float}
-        by_status = {"ACT": {"act": int, "amt": float}, "COM": {...}, "VIP": {...}}
+    Returns: (grand, by_status, raw_text)
     """
     text = _read_pdf_text(pdf_bytes)
     compact = re.sub(r"\s+", " ", text)
@@ -97,7 +92,6 @@ def parse_one_pdf(pdf_bytes: bytes) -> Tuple[Dict, Dict]:
         by_status[status]["act"] += act
         by_status[status]["amt"] += amt
 
-    # Grand total (this file uses 'Total:' w/o 'Grand')
     grand = {"subs": None, "act": None, "amt": None}
     m_total = re.search(r"Total\s*:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)", compact, re.IGNORECASE)
     if m_total:
@@ -105,26 +99,18 @@ def parse_one_pdf(pdf_bytes: bytes) -> Tuple[Dict, Dict]:
         grand["act"]  = _clean_int(m_total.group(2))
         grand["amt"]  = _clean_amt(m_total.group(3))
     else:
-        # Fallback
         grand["act"] = sum(v["act"] for v in by_status.values())
         grand["amt"] = sum(v["amt"] for v in by_status.values())
 
     return grand, by_status, text  # include raw text for date parse
 
-
 def build_snapshot_figure(period_label: str, grand: Dict, by_status: Dict) -> Figure:
-    """
-    Create a static matplotlib figure (for PNG/PDF embeds) with:
-    - KPI text
-    - Bar: Active customers by status
-    - Pie: Revenue share by status
-    """
+    """Static matplotlib figure (for PNG/PDF snapshot)."""
     fig: Figure = plt.figure(figsize=(10, 6), dpi=150)
     ax_title = fig.add_axes([0.05, 0.82, 0.9, 0.15]); ax_title.axis("off")
     ax_left = fig.add_axes([0.07, 0.15, 0.42, 0.60])
     ax_right = fig.add_axes([0.57, 0.15, 0.36, 0.60])
 
-    # Title/KPIs
     avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0.0
     lines = [
         f"Subscriber KPI Snapshot — {period_label}",
@@ -137,14 +123,12 @@ def build_snapshot_figure(period_label: str, grand: Dict, by_status: Dict) -> Fi
     ax_title.text(0.01, 0.60, lines[1], fontsize=11)
     ax_title.text(0.01, 0.35, lines[2], fontsize=11)
 
-    # Bar: customers by status
     statuses = ["ACT", "COM", "VIP"]
     customers = [by_status[s]["act"] for s in statuses]
     ax_left.bar(statuses, customers)
     ax_left.set_title("Active Customers by Status")
     ax_left.set_ylabel("Customers")
 
-    # Pie: revenue share
     revs = [by_status[s]["amt"] for s in statuses]
     ax_right.pie(revs, labels=statuses, autopct="%1.1f%%", startangle=90)
     ax_right.set_title("Revenue Share")
@@ -161,29 +145,29 @@ def export_snapshot_png(period_label: str, grand: Dict, by_status: Dict) -> byte
 
 def export_snapshot_pdf(period_label: str, grand: Dict, by_status: Dict) -> bytes:
     """
-    Simple PDF: header text + embed the same PNG snapshot.
+    Simple PDF: header text + embed the PNG snapshot.
+    FIX: wrap the PNG bytes in ImageReader for reportlab.drawImage.
     """
     png_bytes = export_snapshot_png(period_label, grand, by_status)
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=letter)
     width, height = letter
 
-    # Header / metadata
     c.setTitle(f"Subscriber KPI Snapshot - {period_label}")
     c.setFont("Helvetica-Bold", 14)
     c.drawString(0.75*inch, height - 1.0*inch, f"Subscriber KPI Snapshot — {period_label}")
 
-    # Embed image (scale to fit)
-    img_buf = io.BytesIO(png_bytes)
+    img_reader = ImageReader(io.BytesIO(png_bytes))  # <-- wrap bytes
     img_w = width - 1.5*inch
     img_h = img_w * 0.55
-    c.drawImage(img_buf, 0.75*inch, height - 1.0*inch - img_h - 0.25*inch, width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
+    x = 0.75*inch
+    y = height - 1.0*inch - img_h - 0.25*inch
+    c.drawImage(img_reader, x, y, width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
 
     c.showPage()
     c.save()
     buf.seek(0)
     return buf.getvalue()
-
 
 # =========================================================
 # INPUT (MULTI-FILE SUPPORT FOR TRENDS)
@@ -208,22 +192,17 @@ for i, up in enumerate(uploaded_files, start=1):
         for s in ["ACT", "COM", "VIP"]:
             customers = by_status[s]["act"]
             by_status[s]["rpc"] = (by_status[s]["amt"] / customers) if customers else 0.0
-        records.append({
-            "period": period,
-            "grand": grand,
-            "by_status": by_status
-        })
+        records.append({"period": period, "grand": grand, "by_status": by_status})
     except Exception as e:
         st.error(f"Failed to parse {up.name}: {e}")
 
-# Sort by period if periods look like dates
+# Sort by period if date-like
 def _period_key(p: str):
     try:
         return dt.datetime.fromisoformat(p)
     except Exception:
         return p
 records.sort(key=lambda r: _period_key(r["period"]))
-
 
 # =========================================================
 # CURRENT (LAST) REPORT — KPIs
@@ -233,7 +212,7 @@ period_label = current["period"]
 grand = current["grand"]
 by_status = current["by_status"]
 
-# KPI CARDS (Status) with Revenue/Customer
+# KPI CARDS (Status) + RPC
 c1, c2, c3 = st.columns(3)
 c1.metric("ACT — Active Residential", f"{by_status['ACT']['act']:,}", f"${by_status['ACT']['amt']:,.2f}")
 st.caption(f" Revenue / Customer: ${by_status['ACT']['rpc']:,.2f}")
@@ -257,10 +236,11 @@ st.divider()
 st.subheader("📈 Visuals")
 status_order = ["ACT", "COM", "VIP"]
 chart_data = pd.DataFrame(
-    [{"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "RPC": by_status[s]["rpc"]} for s in status_order]
+    [{"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "RPC": by_status[s]["rpc"]}
+     for s in status_order]
 )
 
-left, right = st.columns([1,1])
+left, right = st.columns([1, 1])
 with left:
     st.markdown("**Revenue Share**")
     rev_chart = (
@@ -301,7 +281,6 @@ with right:
 if len(records) > 1:
     st.divider()
     st.subheader("📅 Trends (across uploaded PDFs)")
-
     trend_rows = []
     for r in records:
         p = r["period"]
