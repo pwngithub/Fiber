@@ -208,20 +208,49 @@ metric_box(c3, "VIP", by_status["VIP"]["act"], by_status["VIP"]["amt"], by_statu
 # CHARTS
 # =========================================================
 st.subheader("📈 Visuals")
-chart=pd.DataFrame([{"Status":s,"Revenue":by_status[s]["amt"],"Customers":by_status[s]["act"],"ARPU":by_status[s]["rpc"]}
-                    for s in ["ACT","COM","VIP"]])
-l,r2=st.columns(2)
+
+chart = pd.DataFrame([
+    {"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "ARPU": by_status[s]["rpc"]}
+    for s in ["ACT", "COM", "VIP"]
+])
+
+# Define Pioneer-style color palette
+color_scale = alt.Scale(
+    domain=["ACT", "COM", "VIP"],
+    range=["#49d0ff", "#3ddc97", "#b8c2cc"]  # Blue, Green, Neutral Gray
+)
+
+l, r2 = st.columns(2)
+
 with l:
     st.markdown("**Revenue Share**")
-    st.altair_chart(alt.Chart(chart).mark_arc(innerRadius=60)
-                    .encode(theta="Revenue:Q",color="Status:N",
-                            tooltip=["Status","Revenue","Customers","ARPU"]),
-                    use_container_width=True)
+    pie = (
+        alt.Chart(chart)
+        .mark_arc(innerRadius=60)
+        .encode(
+            theta="Revenue:Q",
+            color=alt.Color("Status:N", scale=color_scale, legend=None),
+            tooltip=["Status", "Revenue", "Customers", "ARPU"]
+        )
+        .properties(width=300, height=300)
+    )
+    st.altair_chart(pie, use_container_width=True)
+
 with r2:
     st.markdown("**Active Customers by Status**")
-    st.altair_chart(alt.Chart(chart).mark_bar()
-                    .encode(x="Status:N",y="Customers:Q",tooltip=["Status","Customers","Revenue","ARPU"]),
-                    use_container_width=True)
+    bar = (
+        alt.Chart(chart)
+        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+        .encode(
+            x="Status:N",
+            y="Customers:Q",
+            color=alt.Color("Status:N", scale=color_scale, legend=None),
+            tooltip=["Status", "Customers", "Revenue", "ARPU"]
+        )
+        .properties(width=300, height=300)
+    )
+    st.altair_chart(bar, use_container_width=True)
+
 
 # =========================================================
 # EXPORTS
