@@ -161,7 +161,7 @@ records.sort(key=lambda r: r["period"])
 r=records[-1]; grand=r["grand"]; by_status=r["by_status"]; period_label=r["period"]
 overall_arpu=(grand["amt"]/grand["act"]) if grand["act"] else 0
 
-# --- TOP KPI ROW (Bright Blue for Revenue + ARPU) ---
+# --- TOP KPI ROW (Blue for Customers, Green for Revenue & ARPU values) ---
 html_top = f"""
 <div style="display:flex;gap:20px;justify-content:space-between;margin-bottom:10px;">
     <div style="flex:1;background-color:#151924;border:1px solid #1e2331;
@@ -172,12 +172,12 @@ html_top = f"""
     <div style="flex:1;background-color:#151924;border:1px solid #1e2331;
                 border-radius:14px;padding:16px;text-align:center;">
         <p style="margin:0;font-size:16px;color:#b8c2cc;">Total Revenue</p>
-        <p style="margin:0;font-size:28px;font-weight:700;color:#49d0ff;">${grand['amt']:,.2f}</p>
+        <p style="margin:0;font-size:28px;font-weight:700;color:#3ddc97;">${grand['amt']:,.2f}</p>
     </div>
     <div style="flex:1;background-color:#151924;border:1px solid #1e2331;
                 border-radius:14px;padding:16px;text-align:center;">
         <p style="margin:0;font-size:16px;color:#b8c2cc;">ARPU</p>
-        <p style="margin:0;font-size:28px;font-weight:700;color:#49d0ff;">${overall_arpu:,.2f}</p>
+        <p style="margin:0;font-size:28px;font-weight:700;color:#3ddc97;">${overall_arpu:,.2f}</p>
     </div>
 </div>
 """
