@@ -214,7 +214,7 @@ chart = pd.DataFrame([
     for s in ["ACT", "COM", "VIP"]
 ])
 
-# Pioneer palette: ACT=Blue, COM=Green, VIP=Gray
+# Pioneer palette
 color_scale = alt.Scale(
     domain=["ACT", "COM", "VIP"],
     range=["#49d0ff", "#3ddc97", "#b8c2cc"]
@@ -225,7 +225,6 @@ l, r2 = st.columns(2)
 with l:
     st.markdown("**Revenue Share**")
 
-    # Compute percent-of-total for labels
     pie_base = (
         alt.Chart(chart)
         .transform_joinaggregate(total="sum(Revenue)")
@@ -243,7 +242,7 @@ with l:
                 alt.Tooltip("Status:N"),
                 alt.Tooltip("Revenue:Q", format="$.2f"),
                 alt.Tooltip("Customers:Q", format=",.0f"),
-                alt.Tooltip("ARPU:Q", format="$.2f", title="ARPU"),
+                alt.Tooltip("ARPU:Q", format="$.2f"),
                 alt.Tooltip("pct:Q", format=".1%", title="Share")
             ]
         )
@@ -254,8 +253,7 @@ with l:
         .mark_text(radius=95, fontSize=12, fontWeight="bold", color="white")
         .encode(
             theta="Revenue:Q",
-            text=alt.Text("label:N"),
-            # Build "ACT 55.0%" style labels
+            text=alt.Text("label:N")
         )
         .transform_calculate(label="datum.Status + ' ' + format(datum.pct, '.1%')")
     )
@@ -264,13 +262,20 @@ with l:
 
 with r2:
     st.markdown("**Active Customers by Status**")
+
+    # Blue fill with green outline
     bar = (
         alt.Chart(chart)
-        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+        .mark_bar(
+            color="#49d0ff",
+            stroke="#3ddc97",
+            strokeWidth=2,
+            cornerRadiusTopLeft=6,
+            cornerRadiusTopRight=6
+        )
         .encode(
             x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
             y=alt.Y("Customers:Q"),
-            color=alt.Color("Status:N", scale=color_scale, legend=None),
             tooltip=[
                 alt.Tooltip("Status:N"),
                 alt.Tooltip("Customers:Q", format=",.0f"),
@@ -280,6 +285,7 @@ with r2:
         )
         .properties(width=300, height=300)
     )
+
     st.altair_chart(bar, use_container_width=True)
 
 
