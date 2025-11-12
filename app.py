@@ -19,7 +19,7 @@ from matplotlib.figure import Figure
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.lib.utils import ImageReader  # <-- IMPORTANT FIX
+from reportlab.lib.utils import ImageReader  # <-- needed for drawImage
 
 # =========================================================
 # APP CONFIG + THEME
@@ -112,12 +112,16 @@ def build_snapshot_figure(period_label: str, grand: Dict, by_status: Dict) -> Fi
     ax_right = fig.add_axes([0.57, 0.15, 0.36, 0.60])
 
     avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0.0
+    act_rpc = by_status["ACT"]["amt"] / by_status["ACT"]["act"] if by_status["ACT"]["act"] else 0.0
+    com_rpc = by_status["COM"]["amt"] / by_status["COM"]["act"] if by_status["COM"]["act"] else 0.0
+    vip_rpc = by_status["VIP"]["amt"] / by_status["VIP"]["act"] if by_status["VIP"]["act"] else 0.0
+
     lines = [
         f"Subscriber KPI Snapshot — {period_label}",
         f"Grand Active: {grand['act']:,}   |   Grand Revenue: ${grand['amt']:,.2f}   |   Avg Rev / Active: ${avg_rev:,.2f}",
-        f"ACT: {by_status['ACT']['act']:,} (${by_status['ACT']['amt']:,.2f})   "
-        f"COM: {by_status['COM']['act']:,} (${by_status['COM']['amt']:,.2f})   "
-        f"VIP: {by_status['VIP']['act']:,} (${by_status['VIP']['amt']:,.2f})"
+        (f"ACT: {by_status['ACT']['act']:,}  Rev ${by_status['ACT']['amt']:,.2f}  ARPU ${act_rpc:,.2f}   "
+         f"COM: {by_status['COM']['act']:,}  Rev ${by_status['COM']['amt']:,.2f}  ARPU ${com_rpc:,.2f}   "
+         f"VIP: {by_status['VIP']['act']:,}  Rev ${by_status['VIP']['amt']:,.2f}  ARPU ${vip_rpc:,.2f}")
     ]
     ax_title.text(0.01, 0.90, lines[0], fontsize=16, weight="bold")
     ax_title.text(0.01, 0.60, lines[1], fontsize=11)
@@ -144,10 +148,7 @@ def export_snapshot_png(period_label: str, grand: Dict, by_status: Dict) -> byte
     return buf.getvalue()
 
 def export_snapshot_pdf(period_label: str, grand: Dict, by_status: Dict) -> bytes:
-    """
-    Simple PDF: header text + embed the PNG snapshot.
-    FIX: wrap the PNG bytes in ImageReader for reportlab.drawImage.
-    """
+    """PDF: header + embedded PNG snapshot (ImageReader wrapper for drawImage)."""
     png_bytes = export_snapshot_png(period_label, grand, by_status)
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=letter)
@@ -157,7 +158,7 @@ def export_snapshot_pdf(period_label: str, grand: Dict, by_status: Dict) -> byte
     c.setFont("Helvetica-Bold", 14)
     c.drawString(0.75*inch, height - 1.0*inch, f"Subscriber KPI Snapshot — {period_label}")
 
-    img_reader = ImageReader(io.BytesIO(png_bytes))  # <-- wrap bytes
+    img_reader = ImageReader(io.BytesIO(png_bytes))
     img_w = width - 1.5*inch
     img_h = img_w * 0.55
     x = 0.75*inch
@@ -212,16 +213,20 @@ period_label = current["period"]
 grand = current["grand"]
 by_status = current["by_status"]
 
-# KPI CARDS (Status) + RPC
-c1, c2, c3 = st.columns(3)
-c1.metric("ACT — Active Residential", f"{by_status['ACT']['act']:,}", f"${by_status['ACT']['amt']:,.2f}")
-st.caption(f" Revenue / Customer: ${by_status['ACT']['rpc']:,.2f}")
-c2.metric("COM — Active Commercial", f"{by_status['COM']['act']:,}", f"${by_status['COM']['amt']:,.2f}")
-st.caption(f" Revenue / Customer: ${by_status['COM']['rpc']:,.2f}")
-c3.metric("VIP", f"{by_status['VIP']['act']:,}", f"${by_status['VIP']['amt']:,.2f}")
-st.caption(f" Revenue / Customer: ${by_status['VIP']['rpc']:,.2f}")
+# --- KPI CARDS (Status) with ARPU inside each box
+def metric_block(col, title, act, amt, rpc):
+    # Value = Active subs; Delta line shows both Revenue and ARPU in one box
+    col.metric(title, f"{act:,}", delta=f"Rev ${amt:,.2f} • ARPU ${rpc:,.2f}")
 
-# KPI CARDS (Overall)
+c1, c2, c3 = st.columns(3)
+metric_block(c1, "ACT — Active Residential",
+             by_status["ACT"]["act"], by_status["ACT"]["amt"], by_status["ACT"]["rpc"])
+metric_block(c2, "COM — Active Commercial",
+             by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
+metric_block(c3, "VIP",
+             by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
+
+# --- KPI CARDS (Overall)
 o1, o2, o3 = st.columns(3)
 avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0
 o1.metric("Grand Total Active", f"{grand['act']:,}")
@@ -236,8 +241,8 @@ st.divider()
 st.subheader("📈 Visuals")
 status_order = ["ACT", "COM", "VIP"]
 chart_data = pd.DataFrame(
-    [{"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "RPC": by_status[s]["rpc"]}
-     for s in status_order]
+    [{"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"],
+      "RPC": by_status[s]["rpc"]} for s in status_order]
 )
 
 left, right = st.columns([1, 1])
@@ -252,7 +257,7 @@ with left:
             tooltip=[alt.Tooltip("Status:N"),
                      alt.Tooltip("Revenue:Q", format="$.2f"),
                      alt.Tooltip("Customers:Q", format=",.0f"),
-                     alt.Tooltip("RPC:Q", title="Revenue/Customer", format="$.2f")]
+                     alt.Tooltip("RPC:Q", title="ARPU", format="$.2f")]
         )
         .properties(height=320)
     )
@@ -269,7 +274,7 @@ with right:
             tooltip=[alt.Tooltip("Status:N"),
                      alt.Tooltip("Customers:Q", format=",.0f"),
                      alt.Tooltip("Revenue:Q", format="$.2f"),
-                     alt.Tooltip("RPC:Q", title="Revenue/Customer", format="$.2f")]
+                     alt.Tooltip("RPC:Q", title="ARPU", format="$.2f")]
         )
         .properties(height=320)
     )
@@ -325,9 +330,9 @@ with st.expander("Totals by Status (collapsed)", expanded=False):
         [{"Status": s,
           "Active Sub Count": by_status[s]["act"],
           "Revenue": by_status[s]["amt"],
-          "Revenue / Customer": by_status[s]["rpc"]} for s in status_order]
+          "ARPU": by_status[s]["rpc"]} for s in status_order]
     )
-    st.dataframe(df.style.format({"Revenue": "${:,.2f}", "Revenue / Customer": "${:,.2f}"}), use_container_width=True)
+    st.dataframe(df.style.format({"Revenue": "${:,.2f}", "ARPU": "${:,.2f}"}), use_container_width=True)
 
 st.subheader("Export")
 colx, coly, colz = st.columns(3)
