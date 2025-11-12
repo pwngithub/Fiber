@@ -184,18 +184,25 @@ html_top = f"""
 st.markdown(html_top, unsafe_allow_html=True)
 st.divider()
 
-# --- KPI BOXES (ACT/COM/VIP) ---
-def metric_box(col,title,act,amt,rpc):
-    html=f"""<div class='kpi-box'>
+# --- KPI BOXES (ACT/COM/VIP) with green revenue + ARPU values ---
+def metric_box(col, title, act, amt, rpc):
+    html = f"""
+    <div class='kpi-box'>
         <p class='kpi-title'>{title}</p>
         <p class='kpi-value'>{act:,}</p>
-        <p class='kpi-sub'>Rev ${amt:,.2f} • ARPU ${rpc:,.2f}</p></div>"""
-    col.markdown(html,unsafe_allow_html=True)
+        <p class='kpi-sub'>
+            <span style='color:#3ddc97;'>Rev ${amt:,.2f}</span> • 
+            <span style='color:#3ddc97;'>ARPU ${rpc:,.2f}</span>
+        </p>
+    </div>
+    """
+    col.markdown(html, unsafe_allow_html=True)
 
-c1,c2,c3=st.columns(3)
-metric_box(c1,"ACT — Active Residential",by_status["ACT"]["act"],by_status["ACT"]["amt"],by_status["ACT"]["rpc"])
-metric_box(c2,"COM — Active Commercial",by_status["COM"]["act"],by_status["COM"]["amt"],by_status["COM"]["rpc"])
-metric_box(c3,"VIP",by_status["VIP"]["act"],by_status["VIP"]["amt"],by_status["VIP"]["rpc"])
+c1, c2, c3 = st.columns(3)
+metric_box(c1, "ACT — Active Residential", by_status["ACT"]["act"], by_status["ACT"]["amt"], by_status["ACT"]["rpc"])
+metric_box(c2, "COM — Active Commercial", by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
+metric_box(c3, "VIP", by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
+
 
 # =========================================================
 # CHARTS
