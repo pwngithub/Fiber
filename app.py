@@ -1,63 +1,86 @@
 import io
 import re
 import json
+import datetime as dt
+from typing import Dict, List, Tuple
+
 import pandas as pd
 import streamlit as st
 
-# -------------------------------
-# APP CONFIG
-# -------------------------------
-st.set_page_config(page_title="Subscriber KPI Dashboard", page_icon="📶", layout="wide")
+# Charts for the dashboard (interactive)
+import altair as alt
 
-# -------------------------------
-# DARK THEME (subtle, clean)
-# -------------------------------
+# Static images for snapshot exports
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+
+# PDF export
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+
+
+# =========================================================
+# APP CONFIG + THEME
+# =========================================================
+st.set_page_config(page_title="Subscriber KPI Dashboard", page_icon="📶", layout="wide")
 st.markdown("""
 <style>
-/* App background & text */
 :root, .stApp { background-color: #0f1115; color: #e6e6e6; }
 section[data-testid="stSidebar"] { background: #0c0e12; }
-
-/* Metric cards */
 [data-testid="stMetric"] { background: #151924; border: 1px solid #1e2331; padding: 16px; border-radius: 14px; }
 [data-testid="stMetricValue"] { color: #49d0ff; font-weight: 700; }
 [data-testid="stMetricLabel"] { color: #b8c2cc; }
 [data-testid="stMetricDelta"] { color: #a3ffd6; }
-
-/* Dataframe */
 .stDataFrame, .stTable { background: #121620; }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("📶 Subscriber KPI Dashboard")
-st.caption("Extracts ACT / COM / VIP counts & revenue from the **Subscriber Counts v2** PDF and visualizes key KPIs.")
+st.caption("Extracts ACT / COM / VIP counts & revenue from **Subscriber Counts v2** PDFs and visualizes KPIs. Upload one or multiple PDFs for trend lines.")
 
-uploaded = st.file_uploader("Upload 'Subscriber Counts v2' PDF", type=["pdf"])
 
-# -------------------------------
-# UTILITIES
-# -------------------------------
+# =========================================================
+# HELPERS
+# =========================================================
 def _clean_int(s: str) -> int:
     return int(s.replace(",", ""))
 
 def _clean_amt(s: str) -> float:
     return float(s.replace(",", "").replace("(", "-").replace(")", ""))
 
-def parse_pdf(pdf_bytes: bytes):
-    """
-    Strategy tuned for your file:
-    - Find headers like: Customer Status ,"ACT","Active residential","3,727","3,727"
-    - For each header, look BACKWARD ~300 chars to get the last $ amount before the header (that's the status revenue)
-    - Grand Total: match "Total: <subs> <act> $<amt>"
-    """
+def _read_pdf_text(pdf_bytes: bytes) -> str:
     import pdfplumber
-
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        text = "\n".join((p.extract_text() or "") for p in pdf.pages)
+        return "\n".join((p.extract_text() or "") for p in pdf.pages)
 
+def _extract_date_label(text: str, fallback_label: str) -> str:
+    """
+    Try to match 'Date: mm/dd/yyyy' anywhere in the PDF text.
+    If found, return ISO date 'YYYY-MM-DD'. Else, return fallback.
+    """
+    m = re.search(r"Date:\s*([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})", text, flags=re.IGNORECASE)
+    if m:
+        m_, d_, y_ = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return dt.date(y_, m_, d_).isoformat()
+        except Exception:
+            pass
+    return fallback_label
+
+def parse_one_pdf(pdf_bytes: bytes) -> Tuple[Dict, Dict]:
+    """
+    Strategy tuned to your file:
+    - Find headers like: Customer Status ,"ACT","Active residential","3,727","3,727"
+    - For each header, look BACKWARD ~300 chars to get the last $ amount before the header (status revenue)
+    - Grand Total: "Total: <subs> <act> $<amt>"
+    Returns:
+        grand = {"subs": int|None, "act": int, "amt": float}
+        by_status = {"ACT": {"act": int, "amt": float}, "COM": {...}, "VIP": {...}}
+    """
+    text = _read_pdf_text(pdf_bytes)
     compact = re.sub(r"\s+", " ", text)
 
-    # Match the 3 status headers with counts & positions
     header_pat = re.compile(
         r'Customer Status\s*",\s*"(ACT|COM|VIP)"\s*,\s*"(Active residential|Active Commercial|VIP)"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"',
         re.IGNORECASE
@@ -65,7 +88,6 @@ def parse_pdf(pdf_bytes: bytes):
     starts = [(m.group(1).upper(), _clean_int(m.group(4)), m.start(), m.end())
               for m in header_pat.finditer(compact)]
 
-    # Read the $ immediately before each header
     by_status = {"ACT": {"act": 0, "amt": 0.0}, "COM": {"act": 0, "amt": 0.0}, "VIP": {"act": 0, "amt": 0.0}}
     back_window = 300
     for status, act, s, e in starts:
@@ -75,7 +97,7 @@ def parse_pdf(pdf_bytes: bytes):
         by_status[status]["act"] += act
         by_status[status]["amt"] += amt
 
-    # Grand Total (this file uses "Total:")
+    # Grand total (this file uses 'Total:' w/o 'Grand')
     grand = {"subs": None, "act": None, "amt": None}
     m_total = re.search(r"Total\s*:\s*([0-9,]+)\s+([0-9,]+)\s+\$([0-9,.\(\)-]+)", compact, re.IGNORECASE)
     if m_total:
@@ -83,29 +105,142 @@ def parse_pdf(pdf_bytes: bytes):
         grand["act"]  = _clean_int(m_total.group(2))
         grand["amt"]  = _clean_amt(m_total.group(3))
     else:
+        # Fallback
         grand["act"] = sum(v["act"] for v in by_status.values())
         grand["amt"] = sum(v["amt"] for v in by_status.values())
 
-    return grand, by_status
+    return grand, by_status, text  # include raw text for date parse
 
-# -------------------------------
-# UI
-# -------------------------------
-if not uploaded:
-    st.info("Upload the PDF to see KPIs.")
+
+def build_snapshot_figure(period_label: str, grand: Dict, by_status: Dict) -> Figure:
+    """
+    Create a static matplotlib figure (for PNG/PDF embeds) with:
+    - KPI text
+    - Bar: Active customers by status
+    - Pie: Revenue share by status
+    """
+    fig: Figure = plt.figure(figsize=(10, 6), dpi=150)
+    ax_title = fig.add_axes([0.05, 0.82, 0.9, 0.15]); ax_title.axis("off")
+    ax_left = fig.add_axes([0.07, 0.15, 0.42, 0.60])
+    ax_right = fig.add_axes([0.57, 0.15, 0.36, 0.60])
+
+    # Title/KPIs
+    avg_rev = (grand["amt"] / grand["act"]) if grand["act"] else 0.0
+    lines = [
+        f"Subscriber KPI Snapshot — {period_label}",
+        f"Grand Active: {grand['act']:,}   |   Grand Revenue: ${grand['amt']:,.2f}   |   Avg Rev / Active: ${avg_rev:,.2f}",
+        f"ACT: {by_status['ACT']['act']:,} (${by_status['ACT']['amt']:,.2f})   "
+        f"COM: {by_status['COM']['act']:,} (${by_status['COM']['amt']:,.2f})   "
+        f"VIP: {by_status['VIP']['act']:,} (${by_status['VIP']['amt']:,.2f})"
+    ]
+    ax_title.text(0.01, 0.90, lines[0], fontsize=16, weight="bold")
+    ax_title.text(0.01, 0.60, lines[1], fontsize=11)
+    ax_title.text(0.01, 0.35, lines[2], fontsize=11)
+
+    # Bar: customers by status
+    statuses = ["ACT", "COM", "VIP"]
+    customers = [by_status[s]["act"] for s in statuses]
+    ax_left.bar(statuses, customers)
+    ax_left.set_title("Active Customers by Status")
+    ax_left.set_ylabel("Customers")
+
+    # Pie: revenue share
+    revs = [by_status[s]["amt"] for s in statuses]
+    ax_right.pie(revs, labels=statuses, autopct="%1.1f%%", startangle=90)
+    ax_right.set_title("Revenue Share")
+
+    return fig
+
+def export_snapshot_png(period_label: str, grand: Dict, by_status: Dict) -> bytes:
+    fig = build_snapshot_figure(period_label, grand, by_status)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+def export_snapshot_pdf(period_label: str, grand: Dict, by_status: Dict) -> bytes:
+    """
+    Simple PDF: header text + embed the same PNG snapshot.
+    """
+    png_bytes = export_snapshot_png(period_label, grand, by_status)
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    width, height = letter
+
+    # Header / metadata
+    c.setTitle(f"Subscriber KPI Snapshot - {period_label}")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(0.75*inch, height - 1.0*inch, f"Subscriber KPI Snapshot — {period_label}")
+
+    # Embed image (scale to fit)
+    img_buf = io.BytesIO(png_bytes)
+    img_w = width - 1.5*inch
+    img_h = img_w * 0.55
+    c.drawImage(img_buf, 0.75*inch, height - 1.0*inch - img_h - 0.25*inch, width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# =========================================================
+# INPUT (MULTI-FILE SUPPORT FOR TRENDS)
+# =========================================================
+uploaded_files = st.file_uploader(
+    "Upload one or more 'Subscriber Counts v2' PDFs",
+    type=["pdf"],
+    accept_multiple_files=True
+)
+
+if not uploaded_files:
+    st.info("Upload at least one PDF to see KPIs.")
     st.stop()
 
-try:
-    grand, by_status = parse_pdf(uploaded.read())
-except Exception as e:
-    st.error(f"Failed to parse PDF: {e}")
-    st.stop()
+# Parse all files
+records: List[Dict] = []
+for i, up in enumerate(uploaded_files, start=1):
+    try:
+        grand, by_status, raw_text = parse_one_pdf(up.read())
+        period = _extract_date_label(raw_text, fallback_label=up.name or f"File {i}")
+        # Revenue per customer (per status)
+        for s in ["ACT", "COM", "VIP"]:
+            customers = by_status[s]["act"]
+            by_status[s]["rpc"] = (by_status[s]["amt"] / customers) if customers else 0.0
+        records.append({
+            "period": period,
+            "grand": grand,
+            "by_status": by_status
+        })
+    except Exception as e:
+        st.error(f"Failed to parse {up.name}: {e}")
 
-# KPI CARDS (Status)
+# Sort by period if periods look like dates
+def _period_key(p: str):
+    try:
+        return dt.datetime.fromisoformat(p)
+    except Exception:
+        return p
+records.sort(key=lambda r: _period_key(r["period"]))
+
+
+# =========================================================
+# CURRENT (LAST) REPORT — KPIs
+# =========================================================
+current = records[-1]
+period_label = current["period"]
+grand = current["grand"]
+by_status = current["by_status"]
+
+# KPI CARDS (Status) with Revenue/Customer
 c1, c2, c3 = st.columns(3)
 c1.metric("ACT — Active Residential", f"{by_status['ACT']['act']:,}", f"${by_status['ACT']['amt']:,.2f}")
+st.caption(f" Revenue / Customer: ${by_status['ACT']['rpc']:,.2f}")
 c2.metric("COM — Active Commercial", f"{by_status['COM']['act']:,}", f"${by_status['COM']['amt']:,.2f}")
+st.caption(f" Revenue / Customer: ${by_status['COM']['rpc']:,.2f}")
 c3.metric("VIP", f"{by_status['VIP']['act']:,}", f"${by_status['VIP']['amt']:,.2f}")
+st.caption(f" Revenue / Customer: ${by_status['VIP']['rpc']:,.2f}")
 
 # KPI CARDS (Overall)
 o1, o2, o3 = st.columns(3)
@@ -116,39 +251,15 @@ o3.metric("Avg Revenue / Active", f"${avg_rev:,.2f}")
 
 st.divider()
 
-# FILTERS
-st.sidebar.header("Filters")
-status_order = ["ACT", "COM", "VIP"]
-selected = st.sidebar.multiselect("Statuses", status_order, default=status_order)
-
-# TABLE
-df = pd.DataFrame(
-    [{"Status": s, "Active Sub Count": by_status[s]["act"], "Revenue": by_status[s]["amt"]} for s in status_order]
-)
-st.subheader("Totals by Status")
-st.dataframe(df.style.format({"Revenue": "${:,.2f}"}), use_container_width=True)
-
-# FILTERED KPIs
-filt_act = sum(by_status[s]["act"] for s in selected)
-filt_amt = sum(by_status[s]["amt"] for s in selected)
-ff1, ff2 = st.columns(2)
-ff1.metric("Filtered Active Sub Count", f"{filt_act:,}")
-ff2.metric("Filtered Revenue", f"${filt_amt:,.2f}")
-
-# -------------------------------
-# CHARTS
-# -------------------------------
-st.divider()
+# =========================================================
+# CHARTS (CURRENT)
+# =========================================================
 st.subheader("📈 Visuals")
-
-# Use Altair for clean charts
-import altair as alt
-
+status_order = ["ACT", "COM", "VIP"]
 chart_data = pd.DataFrame(
-    [{"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"]} for s in status_order]
+    [{"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "RPC": by_status[s]["rpc"]} for s in status_order]
 )
 
-# Revenue donut
 left, right = st.columns([1,1])
 with left:
     st.markdown("**Revenue Share**")
@@ -158,13 +269,15 @@ with left:
         .encode(
             theta=alt.Theta("Revenue:Q", stack=True),
             color=alt.Color("Status:N"),
-            tooltip=[alt.Tooltip("Status:N"), alt.Tooltip("Revenue:Q", format="$.2f")]
+            tooltip=[alt.Tooltip("Status:N"),
+                     alt.Tooltip("Revenue:Q", format="$.2f"),
+                     alt.Tooltip("Customers:Q", format=",.0f"),
+                     alt.Tooltip("RPC:Q", title="Revenue/Customer", format="$.2f")]
         )
         .properties(height=320)
     )
     st.altair_chart(rev_chart, use_container_width=True)
 
-# Customers bar
 with right:
     st.markdown("**Active Customers by Status**")
     cust_chart = (
@@ -173,24 +286,99 @@ with right:
         .encode(
             x=alt.X("Status:N", sort=status_order),
             y=alt.Y("Customers:Q"),
-            tooltip=[alt.Tooltip("Status:N"), alt.Tooltip("Customers:Q", format=",.0f")]
+            tooltip=[alt.Tooltip("Status:N"),
+                     alt.Tooltip("Customers:Q", format=",.0f"),
+                     alt.Tooltip("Revenue:Q", format="$.2f"),
+                     alt.Tooltip("RPC:Q", title="Revenue/Customer", format="$.2f")]
         )
         .properties(height=320)
     )
     st.altair_chart(cust_chart, use_container_width=True)
 
-# -------------------------------
-# EXPORTS
-# -------------------------------
-st.divider()
+# =========================================================
+# TRENDS (if multiple PDFs)
+# =========================================================
+if len(records) > 1:
+    st.divider()
+    st.subheader("📅 Trends (across uploaded PDFs)")
+
+    trend_rows = []
+    for r in records:
+        p = r["period"]
+        trend_rows.append({"Period": p, "Metric": "Grand Active", "Value": r["grand"]["act"]})
+        trend_rows.append({"Period": p, "Metric": "Grand Revenue", "Value": r["grand"]["amt"]})
+    trend_df = pd.DataFrame(trend_rows)
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.markdown("**Grand Active Over Time**")
+        active_line = (
+            alt.Chart(trend_df[trend_df["Metric"] == "Grand Active"])
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Period:N", sort=None),
+                y=alt.Y("Value:Q"),
+                tooltip=["Period", alt.Tooltip("Value:Q", format=",.0f")]
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(active_line, use_container_width=True)
+
+    with colB:
+        st.markdown("**Grand Revenue Over Time**")
+        revenue_line = (
+            alt.Chart(trend_df[trend_df["Metric"] == "Grand Revenue"])
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Period:N", sort=None),
+                y=alt.Y("Value:Q"),
+                tooltip=["Period", alt.Tooltip("Value:Q", format="$.2f")]
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(revenue_line, use_container_width=True)
+
+# =========================================================
+# TABLE (COLLAPSED) + EXPORTS
+# =========================================================
+with st.expander("Totals by Status (collapsed)", expanded=False):
+    df = pd.DataFrame(
+        [{"Status": s,
+          "Active Sub Count": by_status[s]["act"],
+          "Revenue": by_status[s]["amt"],
+          "Revenue / Customer": by_status[s]["rpc"]} for s in status_order]
+    )
+    st.dataframe(df.style.format({"Revenue": "${:,.2f}", "Revenue / Customer": "${:,.2f}"}), use_container_width=True)
+
 st.subheader("Export")
-colx, coly = st.columns(2)
+colx, coly, colz = st.columns(3)
 colx.download_button(
-    "Download CSV", df.to_csv(index=False).encode("utf-8"), "status_totals.csv", "text/csv"
+    "Download CSV",
+    df.to_csv(index=False).encode("utf-8"),
+    "status_totals.csv",
+    "text/csv"
 )
 coly.download_button(
-    "Download JSON", json.dumps(df.to_dict(orient="records"), indent=2), "status_totals.json", "application/json"
+    "Download JSON",
+    json.dumps(df.to_dict(orient="records"), indent=2),
+    "status_totals.json",
+    "application/json"
 )
 
-# FOOTNOTE
-st.caption("Tip: If your report template changes, this parser can be switched to look after headers or widened. The current file prints $ amounts *before* each status header.")
+# Snapshot (PNG / PDF)
+png_bytes = export_snapshot_png(period_label, grand, by_status)
+pdf_bytes = export_snapshot_pdf(period_label, grand, by_status)
+colz.download_button(
+    "Download KPI Snapshot (PNG)",
+    data=png_bytes,
+    file_name=f"kpi_snapshot_{period_label}.png",
+    mime="image/png"
+)
+st.download_button(
+    "Download KPI Snapshot (PDF)",
+    data=pdf_bytes,
+    file_name=f"kpi_snapshot_{period_label}.pdf",
+    mime="application/pdf"
+)
+
+st.caption("Note: PDF snapshot includes the same KPIs and mini charts rendered as a static image.")
