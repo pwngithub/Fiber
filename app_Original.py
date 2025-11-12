@@ -184,37 +184,73 @@ html_top = f"""
 st.markdown(html_top, unsafe_allow_html=True)
 st.divider()
 
-# --- KPI BOXES (ACT/COM/VIP) ---
-def metric_box(col,title,act,amt,rpc):
-    html=f"""<div class='kpi-box'>
+# --- KPI BOXES (ACT/COM/VIP) with green revenue + ARPU values ---
+def metric_box(col, title, act, amt, rpc):
+    html = f"""
+    <div class='kpi-box'>
         <p class='kpi-title'>{title}</p>
         <p class='kpi-value'>{act:,}</p>
-        <p class='kpi-sub'>Rev ${amt:,.2f} • ARPU ${rpc:,.2f}</p></div>"""
-    col.markdown(html,unsafe_allow_html=True)
+        <p class='kpi-sub'>
+            <span style='color:#3ddc97;'>Rev ${amt:,.2f}</span> • 
+            <span style='color:#3ddc97;'>ARPU ${rpc:,.2f}</span>
+        </p>
+    </div>
+    """
+    col.markdown(html, unsafe_allow_html=True)
 
-c1,c2,c3=st.columns(3)
-metric_box(c1,"ACT — Active Residential",by_status["ACT"]["act"],by_status["ACT"]["amt"],by_status["ACT"]["rpc"])
-metric_box(c2,"COM — Active Commercial",by_status["COM"]["act"],by_status["COM"]["amt"],by_status["COM"]["rpc"])
-metric_box(c3,"VIP",by_status["VIP"]["act"],by_status["VIP"]["amt"],by_status["VIP"]["rpc"])
+c1, c2, c3 = st.columns(3)
+metric_box(c1, "ACT — Active Residential", by_status["ACT"]["act"], by_status["ACT"]["amt"], by_status["ACT"]["rpc"])
+metric_box(c2, "COM — Active Commercial", by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
+metric_box(c3, "VIP", by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
+
 
 # =========================================================
 # CHARTS
 # =========================================================
 st.subheader("📈 Visuals")
-chart=pd.DataFrame([{"Status":s,"Revenue":by_status[s]["amt"],"Customers":by_status[s]["act"],"ARPU":by_status[s]["rpc"]}
-                    for s in ["ACT","COM","VIP"]])
-l,r2=st.columns(2)
+
+chart = pd.DataFrame([
+    {"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "ARPU": by_status[s]["rpc"]}
+    for s in ["ACT", "COM", "VIP"]
+])
+
+# Define Pioneer-style color palette
+color_scale = alt.Scale(
+    domain=["ACT", "COM", "VIP"],
+    range=["#49d0ff", "#3ddc97", "#b8c2cc"]  # Blue, Green, Neutral Gray
+)
+
+l, r2 = st.columns(2)
+
 with l:
     st.markdown("**Revenue Share**")
-    st.altair_chart(alt.Chart(chart).mark_arc(innerRadius=60)
-                    .encode(theta="Revenue:Q",color="Status:N",
-                            tooltip=["Status","Revenue","Customers","ARPU"]),
-                    use_container_width=True)
+    pie = (
+        alt.Chart(chart)
+        .mark_arc(innerRadius=60)
+        .encode(
+            theta="Revenue:Q",
+            color=alt.Color("Status:N", scale=color_scale, legend=None),
+            tooltip=["Status", "Revenue", "Customers", "ARPU"]
+        )
+        .properties(width=300, height=300)
+    )
+    st.altair_chart(pie, use_container_width=True)
+
 with r2:
     st.markdown("**Active Customers by Status**")
-    st.altair_chart(alt.Chart(chart).mark_bar()
-                    .encode(x="Status:N",y="Customers:Q",tooltip=["Status","Customers","Revenue","ARPU"]),
-                    use_container_width=True)
+    bar = (
+        alt.Chart(chart)
+        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+        .encode(
+            x="Status:N",
+            y="Customers:Q",
+            color=alt.Color("Status:N", scale=color_scale, legend=None),
+            tooltip=["Status", "Customers", "Revenue", "ARPU"]
+        )
+        .properties(width=300, height=300)
+    )
+    st.altair_chart(bar, use_container_width=True)
+
 
 # =========================================================
 # EXPORTS
