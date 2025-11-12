@@ -263,9 +263,11 @@ with l:
 with r2:
     st.markdown("**Active Customers by Status**")
 
+    base = alt.Chart(chart).properties(width=300, height=300)
+
     # Blue fill with green outline
-    bar = (
-        alt.Chart(chart)
+    bars = (
+        base
         .mark_bar(
             color="#49d0ff",
             stroke="#3ddc97",
@@ -283,10 +285,20 @@ with r2:
                 alt.Tooltip("ARPU:Q", format="$.2f")
             ]
         )
-        .properties(width=300, height=300)
     )
 
-    st.altair_chart(bar, use_container_width=True)
+    # Value labels on top of bars
+    labels = (
+        base
+        .mark_text(dy=-6, fontSize=12, color="#e6e6e6", fontWeight="bold")
+        .encode(
+            x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
+            y=alt.Y("Customers:Q"),
+            text=alt.Text("Customers:Q", format=",.0f")
+        )
+    )
+
+    st.altair_chart(bars + labels, use_container_width=True)
 
 
 
