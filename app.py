@@ -28,39 +28,29 @@ st.markdown("""
    1. CSS VARIABLES – dark by default
    ------------------------------------------------- */
 :root {
-    /* Backgrounds */
     --bg-app:        #0f1115;
     --bg-sidebar:    #0c0e12;
     --bg-card:       #151924;
     --border-card:   #1e2331;
-
-    /* Text */
     --text-primary:  #e6e6e6;
     --text-muted:    #b8c2cc;
-
-    /* Accents */
-    --accent-blue:   #49d0ff;   /* bright cyan-blue */
-    --accent-green:  #3ddc97;   /* vivid mint */
+    --accent-blue:   #49d0ff;
+    --accent-green:  #3ddc97;
 }
 
 /* -------------------------------------------------
-   2. LIGHT-MODE OVERRIDE (Streamlit adds .light)
+   2. LIGHT-MODE OVERRIDE
    ------------------------------------------------- */
 .stApp.light,
 .light {
-    /* Backgrounds – clean, soft white */
     --bg-app:        #fafafa;
     --bg-sidebar:    #f0f2f6;
     --bg-card:       #ffffff;
     --border-card:   #dee2e6;
-
-    /* Text – high contrast */
     --text-primary:  #212529;
     --text-muted:    #6c757d;
-
-    /* Accents – Bootstrap-inspired, but a touch more vibrant */
-    --accent-blue:   #0d6efd;   /* Bootstrap primary */
-    --accent-green:  #198754;   /* Bootstrap success */
+    --accent-blue:   #0d6efd;
+    --accent-green:  #198754;
 }
 
 /* -------------------------------------------------
@@ -71,18 +61,19 @@ section[data-testid="stSidebar"] {
     background: var(--bg-app);
     color:      var(--text-primary);
 }
-section[data-testid="stSidebar"] {
-    background: var(--bg-sidebar);
-}
+section[data-testid="stSidebar"] { background: var(--bg-sidebar); }
 
 /* -------------------------------------------------
    4. METRICS & CARDS
    ------------------------------------------------- */
-[data-testid="stMetric"] {
+[data-testid="stMetric"],
+.kpi-box {
     background: var(--bg-card);
     border: 1px solid var(--border-card);
-    padding: 16px;
     border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 5px;
+    text-align: center;
 }
 [data-testid="stMetricValue"] { color: var(--accent-blue); font-weight: 700; }
 [data-testid="stMetricLabel"] { color: var(--text-muted); }
@@ -92,16 +83,8 @@ section[data-testid="stSidebar"] {
 .stTable { background: var(--bg-card); }
 
 /* -------------------------------------------------
-   5. KPI BOXES (ACT / COM / VIP)
+   5. KPI BOXES
    ------------------------------------------------- */
-.kpi-box {
-    background: var(--bg-card);
-    border: 1px solid var(--border-card);
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 5px;
-    text-align: center;
-}
 .kpi-title { margin:0; font-size:16px; color:var(--text-muted); }
 .kpi-value { margin:0; font-size:28px; font-weight:700; color:var(--accent-blue); }
 .kpi-sub   { margin:4px 0 0 0; font-size:14px; }
@@ -116,7 +99,7 @@ div[data-testid="column"] > div > div > div > div {
 }
 
 /* -------------------------------------------------
-   7. ALTAIR / VEGA TEXT (readability in both modes)
+   7. ALTAIR / VEGA – force theme-aware background & text
    ------------------------------------------------- */
 .vega-bind-name,
 .vega-bind,
@@ -130,12 +113,35 @@ text,
     color: var(--text-primary) !important;
 }
 
-/* -------------------------------------------------
-   8. OPTIONAL: subtle shadow for cards in light mode
-   ------------------------------------------------- */
+/* chart background – matches card background */
+.vega-bind,
+.vega-visualization,
+.vega-embed,
+.vega-container,
+.vega-view {
+    background: var(--bg-card) !important;
+}
+
+/* chart plot area (the actual canvas) */
+.vega-plot,
+.vega-scenegraph,
+.vega-canvas {
+    background: var(--bg-card) !important;
+}
+
+/* optional subtle shadow in light mode */
 .stApp.light .kpi-box,
 .stApp.light [data-testid="stMetric"] {
     box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* -------------------------------------------------
+   8. DOWNLOAD SNAPSHOT – ensure PNG/PDF uses card bg
+   ------------------------------------------------- */
+.snapshot-container {
+    background: var(--bg-card);
+    padding: 20px;
+    border-radius: 14px;
 }
 </style>
 """, unsafe_allow_html=True)
