@@ -25,33 +25,42 @@ st.set_page_config(page_title="FTTH Dashboard", page_icon="📶", layout="wide")
 st.markdown("""
 <style>
 /* -------------------------------------------------
-   1. ROOT VARIABLES – dark by default
+   1. CSS VARIABLES – dark by default
    ------------------------------------------------- */
 :root {
+    /* Backgrounds */
     --bg-app:        #0f1115;
     --bg-sidebar:    #0c0e12;
     --bg-card:       #151924;
     --border-card:   #1e2331;
+
+    /* Text */
     --text-primary:  #e6e6e6;
     --text-muted:    #b8c2cc;
-    --accent-blue:   #49d0ff;
-    --accent-green:  #3ddc97;
+
+    /* Accents */
+    --accent-blue:   #49d0ff;   /* bright cyan-blue */
+    --accent-green:  #3ddc97;   /* vivid mint */
 }
 
 /* -------------------------------------------------
-   2. LIGHT-MODE OVERRIDE
-       (detected via the Streamlit CSS class .light)
+   2. LIGHT-MODE OVERRIDE (Streamlit adds .light)
    ------------------------------------------------- */
 .stApp.light,
 .light {
+    /* Backgrounds – clean, soft white */
     --bg-app:        #fafafa;
     --bg-sidebar:    #f0f2f6;
     --bg-card:       #ffffff;
-    --border-card:   #e0e0e0;
+    --border-card:   #dee2e6;
+
+    /* Text – high contrast */
     --text-primary:  #212529;
     --text-muted:    #6c757d;
-    --accent-blue:   #0d6efd;
-    --accent-green:  #198754;
+
+    /* Accents – Bootstrap-inspired, but a touch more vibrant */
+    --accent-blue:   #0d6efd;   /* Bootstrap primary */
+    --accent-green:  #198754;   /* Bootstrap success */
 }
 
 /* -------------------------------------------------
@@ -79,7 +88,8 @@ section[data-testid="stSidebar"] {
 [data-testid="stMetricLabel"] { color: var(--text-muted); }
 [data-testid="stMetricDelta"] { color: var(--accent-green); }
 
-.stDataFrame, .stTable { background: var(--bg-card); }
+.stDataFrame,
+.stTable { background: var(--bg-card); }
 
 /* -------------------------------------------------
    5. KPI BOXES (ACT / COM / VIP)
@@ -106,20 +116,29 @@ div[data-testid="column"] > div > div > div > div {
 }
 
 /* -------------------------------------------------
-   7. ALTAIR CHART TEXT (light mode readability)
+   7. ALTAIR / VEGA TEXT (readability in both modes)
    ------------------------------------------------- */
 .vega-bind-name,
 .vega-bind,
 .vega-bind input,
 .vega-bind select,
 .vega-bind option,
-text {
+text,
+.mark-text,
+.mark-label {
     fill: var(--text-primary) !important;
     color: var(--text-primary) !important;
 }
+
+/* -------------------------------------------------
+   8. OPTIONAL: subtle shadow for cards in light mode
+   ------------------------------------------------- */
+.stApp.light .kpi-box,
+.stApp.light [data-testid="stMetric"] {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
 </style>
 """, unsafe_allow_html=True)
-
 st.title("📶 FTTH Dashboard")
 st.caption("Extracts ACT / COM / VIP counts & revenue from **Subscriber Counts v2** PDFs and visualizes KPIs for FTTH services.")
 
