@@ -23,34 +23,35 @@ import requests
 # =========================================================
 st.set_page_config(page_title="FTTH Dashboard", page_icon="📶", layout="wide")
 st.markdown("""
+st.markdown("""
 <style>
 /* -------------------------------------------------
-   1. CSS VARIABLES – dark by default
+   1. CSS VARIABLES – BLACK background always
    ------------------------------------------------- */
 :root {
-    --bg-app:        #0f1115;
-    --bg-sidebar:    #0c0e12;
-    --bg-card:       #151924;
-    --border-card:   #1e2331;
+    --bg-app:        #000000;   /* BLACK */
+    --bg-sidebar:    #0a0a0a;
+    --bg-card:       #111111;
+    --border-card:   #222222;
     --text-primary:  #e6e6e6;
-    --text-muted:    #b8c2cc;
+    --text-muted:    #aaaaaa;
     --accent-blue:   #49d0ff;
     --accent-green:  #3ddc97;
 }
 
 /* -------------------------------------------------
-   2. LIGHT-MODE OVERRIDE
+   2. LIGHT MODE – still BLACK (forced)
    ------------------------------------------------- */
 .stApp.light,
 .light {
-    --bg-app:        #fafafa;
-    --bg-sidebar:    #f0f2f6;
-    --bg-card:       #ffffff;
-    --border-card:   #dee2e6;
-    --text-primary:  #212529;
-    --text-muted:    #6c757d;
-    --accent-blue:   #0d6efd;
-    --accent-green:  #198754;
+    --bg-app:        #000000;
+    --bg-sidebar:    #0a0a0a;
+    --bg-card:       #111111;
+    --border-card:   #222222;
+    --text-primary:  #e6e6e6;
+    --text-muted:    #aaaaaa;
+    --accent-blue:   #49d0ff;
+    --accent-green:  #3ddc97;
 }
 
 /* -------------------------------------------------
@@ -58,18 +59,18 @@ st.markdown("""
    ------------------------------------------------- */
 .stApp,
 section[data-testid="stSidebar"] {
-    background: var(--bg-app);
+    background: var(--bg-app) !important;
     color:      var(--text-primary);
 }
-section[data-testid="stSidebar"] { background: var(--bg-sidebar); }
+section[data-testid="stSidebar"] { background: var(--bg-sidebar) !important; }
 
 /* -------------------------------------------------
    4. METRICS & CARDS
    ------------------------------------------------- */
 [data-testid="stMetric"],
 .kpi-box {
-    background: var(--bg-card);
-    border: 1px solid var(--border-card);
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-card) !important;
     border-radius: 14px;
     padding: 16px;
     margin-bottom: 5px;
@@ -80,7 +81,7 @@ section[data-testid="stSidebar"] { background: var(--bg-sidebar); }
 [data-testid="stMetricDelta"] { color: var(--accent-green); }
 
 .stDataFrame,
-.stTable { background: var(--bg-card); }
+.stTable { background: var(--bg-card) !important; }
 
 /* -------------------------------------------------
    5. KPI BOXES
@@ -91,15 +92,15 @@ section[data-testid="stSidebar"] { background: var(--bg-sidebar); }
 .kpi-sub span { color:var(--accent-green); }
 
 /* -------------------------------------------------
-   6. TOP KPI ROW (flex boxes)
+   6. TOP KPI ROW
    ------------------------------------------------- */
 div[data-testid="column"] > div > div > div > div {
-    background: var(--bg-card);
-    border: 1px solid var(--border-card);
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-card) !important;
 }
 
 /* -------------------------------------------------
-   7. ALTAIR / VEGA – force theme-aware background & text
+   7. ALTAIR / VEGA – BLACK background + readable text
    ------------------------------------------------- */
 .vega-bind-name,
 .vega-bind,
@@ -108,35 +109,28 @@ div[data-testid="column"] > div > div > div > div {
 .vega-bind option,
 text,
 .mark-text,
-.mark-label {
+.mark-label,
+.vega-title,
+.vega-axis-label,
+.vega-axis-title {
     fill: var(--text-primary) !important;
     color: var(--text-primary) !important;
 }
 
-/* chart background – matches card background */
+/* Force chart canvas & container to BLACK */
 .vega-bind,
 .vega-visualization,
 .vega-embed,
 .vega-container,
-.vega-view {
-    background: var(--bg-card) !important;
-}
-
-/* chart plot area (the actual canvas) */
+.vega-view,
 .vega-plot,
 .vega-scenegraph,
 .vega-canvas {
     background: var(--bg-card) !important;
 }
 
-/* optional subtle shadow in light mode */
-.stApp.light .kpi-box,
-.stApp.light [data-testid="stMetric"] {
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
-}
-
 /* -------------------------------------------------
-   8. DOWNLOAD SNAPSHOT – ensure PNG/PDF uses card bg
+   8. SNAPSHOT DOWNLOAD AREA
    ------------------------------------------------- */
 .snapshot-container {
     background: var(--bg-card);
