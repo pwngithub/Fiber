@@ -67,9 +67,7 @@ section[data-testid="stSidebar"] {
 [data-testid="stMetric"],
 .kpi-box,
 .stDataFrame,
-.stTable,
-.css-1d391kg,
-.css-1cpxqw2 {
+.stTable {
     background: #111111 !important;
     border: 1px solid #222222 !important;
     color: #e6e6e6 !important;
@@ -90,22 +88,19 @@ section[data-testid="stSidebar"] {
 .vega-scenegraph,
 .vega-canvas,
 .vega-background,
-.vega-rect,
-.vega-mark,
-.vega-axis,
-.vega-title,
-.vega-axis-label,
-.vega-axis-title,
 text,
 .mark-text,
-.mark-label {
+.mark-label,
+.vega-title,
+.vega-axis-label,
+.vega-axis-title {
     background: #111111 !important;
     fill: #e6e6e6 !important;
     color: #e6e6e6 !important;
     stroke: #e6e6e6 !important;
 }
 
-/* Force chart container background */
+/* Force SVG/canvas inside Altair */
 .vega-embed > div,
 .vega-embed svg,
 .vega-embed canvas {
@@ -113,9 +108,10 @@ text,
 }
 
 /* -------------------------------------------------
-   6. DOWNLOAD BUTTONS AREA
+   6. DOWNLOAD BUTTON AREA
    ------------------------------------------------- */
-.css-1y0t6ff, .css-1v0mbdj {
+.css-1y0t6ff,
+.css-1v0mbdj {
     background: #111111 !important;
     border: 1px solid #222222 !important;
 }
