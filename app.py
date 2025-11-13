@@ -1,7 +1,6 @@
 # app.py
 import io
 import re
-import json
 import os
 import base64
 import datetime as dt
@@ -22,14 +21,14 @@ import requests
 # APP CONFIG + THEME
 # =========================================================
 st.set_page_config(page_title="FTTH Dashboard", page_icon="📶", layout="wide")
+
 st.markdown("""
 <style>
 
-/* Streamlit automatically sets these based on light/dark mode: */
+/* Automatically adapts to Streamlit light/dark theme */
 :root {
     --bg: var(--background-color);
     --text: var(--text-color);
-    --primary: var(--primary-color);
 }
 
 /* App background */
@@ -44,13 +43,13 @@ section[data-testid="stSidebar"] {
     color: var(--text);
 }
 
-/* KPI Boxes */
+/* Unified KPI Box Style (used for ALL KPI cards) */
 .kpi-box {
-    background-color: rgba(21, 25, 36, 0.85);  /* adaptive (dark) */
+    background-color: rgba(21, 25, 36, 0.90);
     border: 1px solid #1e2331;
     border-radius: 14px;
     padding: 16px;
-    margin-bottom: 5px;
+    margin-bottom: 10px;
     text-align: center;
 }
 
@@ -61,44 +60,35 @@ section[data-testid="stSidebar"] {
     }
 }
 
-/* KPI text */
-.kpi-title { color: var(--text); }
-.kpi-value { font-size: 28px; font-weight: 700; color: #49d0ff; }
-.kpi-sub { font-size: 14px; color: #3ddc97; }
-
-/* Top KPI cards */
-.metric-card {
-    background-color: rgba(21, 25, 36, 0.85);
-    border: 1px solid #1e2331;
-    border-radius: 14px;
-    padding: 16px;
-    text-align: center;
-}
-
-@media (prefers-color-scheme: light) {
-    .metric-card {
-        background-color: #ffffff;
-        border-color: #cccccc;
-    }
-}
-
-/* Text inside metric cards */
-.metric-card-title {
+/* KPI Text */
+.kpi-title {
     margin: 0;
     font-size: 16px;
     color: var(--text);
 }
-.metric-card-value-blue {
+
+.kpi-value-blue {
     margin: 0;
     font-size: 28px;
     font-weight: 700;
     color: #49d0ff;
 }
-.metric-card-value-green {
+
+.kpi-value-green {
     margin: 0;
     font-size: 28px;
     font-weight: 700;
     color: #3ddc97;
+}
+
+.kpi-sub {
+    margin-top: 4px;
+    font-size: 14px;
+    color: #3ddc97;
+}
+
+.stDataFrame, .stTable {
+    background: var(--bg);
 }
 
 </style>
@@ -108,12 +98,12 @@ st.title("📶 FTTH Dashboard")
 st.caption("Extracts ACT / COM / VIP counts & revenue from **Subscriber Counts v2** PDFs and visualizes KPIs for FTTH services.")
 
 # =========================================================
-# HELPERS
+# PARSE HELPERS
 # =========================================================
-def _clean_int(s): 
+def _clean_int(s: str) -> int:
     return int(s.replace(",", ""))
 
-def _clean_amt(s): 
+def _clean_amt(s: str) -> float:
     return float(s.replace(",", "").replace("(", "-").replace(")", ""))
 
 def _read_pdf_text(pdf_bytes: bytes) -> str:
@@ -133,13 +123,22 @@ def _extract_date_label(text: str, fallback_label: str) -> str:
 def parse_one_pdf(pdf_bytes: bytes):
     text = _read_pdf_text(pdf_bytes)
     compact = re.sub(r"\s+", " ", text)
+
     header_pat = re.compile(
         r'Customer Status\s*",\s*"(ACT|COM|VIP)"\s*,\s*"(Active residential|Active Commercial|VIP)"\s*,\s*"([0-9,]+)"\s*,\s*"([0-9,]+)"',
-        re.IGNORECASE)
-    starts = [(m.group(1).upper(), _clean_int(m.group(4)), m.start(), m.end())
-              for m in header_pat.finditer(compact)]
+        re.IGNORECASE
+    )
+    starts = [
+        (m.group(1).upper(), _clean_int(m.group(4)), m.start(), m.end())
+        for m in header_pat.finditer(compact)
+    ]
 
-    by_status = {"ACT": {"act": 0, "amt": 0.0}, "COM": {"act": 0, "amt": 0.0}, "VIP": {"act": 0, "amt": 0.0}}
+    by_status = {
+        "ACT": {"act": 0, "amt": 0.0},
+        "COM": {"act": 0, "amt": 0.0},
+        "VIP": {"act": 0, "amt": 0.0},
+    }
+
     for status, act, s, e in starts:
         win = compact[max(0, s - 300): s]
         dollars = list(re.finditer(r"\$([0-9][0-9,.\(\)-]*)", win))
@@ -152,41 +151,53 @@ def parse_one_pdf(pdf_bytes: bytes):
         grand = {
             "subs": _clean_int(m_total.group(1)),
             "act": _clean_int(m_total.group(2)),
-            "amt": _clean_amt(m_total.group(3))
+            "amt": _clean_amt(m_total.group(3)),
         }
     else:
         grand = {
             "act": sum(v["act"] for v in by_status.values()),
-            "amt": sum(v["amt"] for v in by_status.values())
+            "amt": sum(v["amt"] for v in by_status.values()),
         }
+
     return grand, by_status, text
 
+# =========================================================
+# SNAPSHOT / EXPORT HELPERS
+# =========================================================
 def build_snapshot_figure(period_label, grand, by_status):
     fig: Figure = plt.figure(figsize=(10, 6), dpi=150)
-    ax_title = fig.add_axes([0.05, 0.82, 0.9, 0.15]); ax_title.axis("off")
+    ax_title = fig.add_axes([0.05, 0.82, 0.9, 0.15])
+    ax_title.axis("off")
     ax_left = fig.add_axes([0.07, 0.15, 0.42, 0.60])
     ax_right = fig.add_axes([0.57, 0.15, 0.36, 0.60])
 
-    overall_arpu = (grand["amt"]/grand["act"]) if grand["act"] else 0
-    act_rpc = by_status["ACT"]["amt"]/by_status["ACT"]["act"] if by_status["ACT"]["act"] else 0
-    com_rpc = by_status["COM"]["amt"]/by_status["COM"]["act"] if by_status["COM"]["act"] else 0
-    vip_rpc = by_status["VIP"]["amt"]/by_status["VIP"]["act"] if by_status["VIP"]["act"] else 0
+    overall_arpu = (grand["amt"] / grand["act"]) if grand["act"] else 0
+    act_rpc = by_status["ACT"]["amt"] / by_status["ACT"]["act"] if by_status["ACT"]["act"] else 0
+    com_rpc = by_status["COM"]["amt"] / by_status["COM"]["act"] if by_status["COM"]["act"] else 0
+    vip_rpc = by_status["VIP"]["amt"] / by_status["VIP"]["act"] if by_status["VIP"]["act"] else 0
 
     lines = [
         f"FTTH Dashboard — {period_label}",
         f"FTTH Customers: {grand['act']:,}   |   Total Revenue: ${grand['amt']:,.2f}   |   ARPU: ${overall_arpu:,.2f}",
-        (f"ACT: {by_status['ACT']['act']:,} Rev ${by_status['ACT']['amt']:,.2f} ARPU ${act_rpc:,.2f}   "
-         f"COM: {by_status['COM']['act']:,} Rev ${by_status['COM']['amt']:,.2f} ARPU ${com_rpc:,.2f}   "
-         f"VIP: {by_status['VIP']['act']:,} Rev ${by_status['VIP']['amt']:,.2f} ARPU ${vip_rpc:,.2f}")
+        (
+            f"ACT: {by_status['ACT']['act']:,} Rev ${by_status['ACT']['amt']:,.2f} ARPU ${act_rpc:,.2f}   "
+            f"COM: {by_status['COM']['act']:,} Rev ${by_status['COM']['amt']:,.2f} ARPU ${com_rpc:,.2f}   "
+            f"VIP: {by_status['VIP']['act']:,} Rev ${by_status['VIP']['amt']:,.2f} ARPU ${vip_rpc:,.2f}"
+        ),
     ]
     ax_title.text(0.01, 0.9, lines[0], fontsize=16, weight="bold")
     ax_title.text(0.01, 0.6, lines[1], fontsize=11)
     ax_title.text(0.01, 0.35, lines[2], fontsize=11)
 
-    statuses = ["ACT","COM","VIP"]
+    statuses = ["ACT", "COM", "VIP"]
     ax_left.bar(statuses, [by_status[s]["act"] for s in statuses])
-    ax_left.set_title("Active Customers by Status"); ax_left.set_ylabel("Customers")
-    ax_right.pie([by_status[s]["amt"] for s in statuses], labels=statuses, autopct="%1.1f%%")
+    ax_left.set_title("Active Customers by Status")
+    ax_left.set_ylabel("Customers")
+    ax_right.pie(
+        [by_status[s]["amt"] for s in statuses],
+        labels=statuses,
+        autopct="%1.1f%%"
+    )
     ax_right.set_title("Revenue Share")
     return fig
 
@@ -205,12 +216,22 @@ def export_snapshot_pdf(period_label, grand, by_status):
     width, height = letter
     c.setTitle(f"FTTH Dashboard - {period_label}")
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(0.75*inch, height-1.0*inch, f"FTTH Dashboard — {period_label}")
+    c.drawString(0.75 * inch, height - 1.0 * inch, f"FTTH Dashboard — {period_label}")
     img_reader = ImageReader(io.BytesIO(png_bytes))
-    img_w = width-1.5*inch; img_h = img_w*0.55
-    c.drawImage(img_reader, 0.75*inch, height-1.0*inch-img_h-0.25*inch,
-                width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
-    c.showPage(); c.save(); buf.seek(0)
+    img_w = width - 1.5 * inch
+    img_h = img_w * 0.55
+    c.drawImage(
+        img_reader,
+        0.75 * inch,
+        height - 1.0 * inch - img_h - 0.25 * inch,
+        width=img_w,
+        height=img_h,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
+    c.showPage()
+    c.save()
+    buf.seek(0)
     return buf.getvalue()
 
 # =========================================================
@@ -231,7 +252,7 @@ def get_github_config():
 
 def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
     """Save uploaded file to local 'fiber' folder AND push to GitHub."""
-    # 1) Save locally
+    # Local save
     local_folder = "fiber"
     os.makedirs(local_folder, exist_ok=True)
     local_path = os.path.join(local_folder, filename)
@@ -243,7 +264,7 @@ def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
     except Exception as e:
         st.error(f"Failed to save file locally: {e}")
 
-    # 2) Push to GitHub
+    # GitHub save
     token, repo, branch, remote_prefix = get_github_config()
     if not token or not repo:
         return
@@ -253,7 +274,7 @@ def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
 
     headers = {
         "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json"
+        "Accept": "application/vnd.github+json",
     }
     content_b64 = base64.b64encode(file_bytes).decode("utf-8")
 
@@ -272,7 +293,6 @@ def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
         payload["sha"] = sha
 
     put_resp = requests.put(api_url, headers=headers, json=payload)
-
     if put_resp.status_code in (200, 201):
         st.success(f"Pushed to GitHub: {repo}/{remote_path}")
     else:
@@ -284,13 +304,12 @@ def list_github_files_in_fiber():
     if not token or not repo:
         return []
 
-    # remote_prefix like "fiber/"; for contents API, use just the path without trailing slash
     path = remote_prefix.rstrip("/")
     api_url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}"
 
     headers = {
         "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json"
+        "Accept": "application/vnd.github+json",
     }
     resp = requests.get(api_url, headers=headers)
     if resp.status_code != 200:
@@ -314,12 +333,12 @@ def load_github_file_from_github(file_info) -> bytes:
     return resp.content
 
 # =========================================================
-# INPUT / PARSE
+# INPUT / SOURCE SELECTION
 # =========================================================
 source_choice = st.radio(
     "Choose data source",
     ["Upload new PDFs", "Pick from GitHub"],
-    horizontal=True
+    horizontal=True,
 )
 
 records: List[Dict] = []
@@ -328,7 +347,7 @@ if source_choice == "Upload new PDFs":
     uploaded_files = st.file_uploader(
         "Upload 'Subscriber Counts v2' PDFs",
         type=["pdf"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
     )
 
     if not uploaded_files:
@@ -340,24 +359,21 @@ if source_choice == "Upload new PDFs":
         if not pdf_bytes:
             continue
 
-        # Save this upload to local fiber/ and GitHub
         save_upload_to_local_and_github(up.name, pdf_bytes)
 
-        # Parse as before
         grand, by_status, raw = parse_one_pdf(pdf_bytes)
         period = _extract_date_label(raw, fallback_label=up.name or f"File {i}")
         for s in ["ACT", "COM", "VIP"]:
             c_ = by_status[s]["act"]
-            by_status[s]["rpc"] = (by_status[s]["amt"]/c_) if c_ else 0
+            by_status[s]["rpc"] = (by_status[s]["amt"] / c_) if c_ else 0
         records.append({"period": period, "grand": grand, "by_status": by_status})
 
-else:  # Pick from GitHub
+else:
     gh_files = list_github_files_in_fiber()
     if not gh_files:
         st.info("No files found in GitHub fiber/ directory.")
         st.stop()
 
-    # Filter to PDFs only
     pdf_items = [f for f in gh_files if f.get("name", "").lower().endswith(".pdf")]
     if not pdf_items:
         st.info("No PDF files found in GitHub fiber/ directory.")
@@ -368,7 +384,7 @@ else:  # Pick from GitHub
     selected_names = st.multiselect(
         "Select one or more PDFs from GitHub fiber/ directory",
         options=options,
-        default=options[:1] if options else None
+        default=options[:1] if options else None,
     )
 
     if not selected_names:
@@ -380,61 +396,61 @@ else:  # Pick from GitHub
         pdf_bytes = load_github_file_from_github(file_info)
         if not pdf_bytes:
             continue
+
         grand, by_status, raw = parse_one_pdf(pdf_bytes)
         period = _extract_date_label(raw, fallback_label=name)
         for s in ["ACT", "COM", "VIP"]:
             c_ = by_status[s]["act"]
-            by_status[s]["rpc"] = (by_status[s]["amt"]/c_) if c_ else 0
+            by_status[s]["rpc"] = (by_status[s]["amt"] / c_) if c_ else 0
         records.append({"period": period, "grand": grand, "by_status": by_status})
 
 if not records:
     st.error("No valid records loaded from the selected source.")
     st.stop()
 
-# Sort by period (string; ISO dates sort nicely)
 records.sort(key=lambda r: r["period"])
 
 # =========================================================
-# CURRENT REPORT
+# CURRENT REPORT KPIS
 # =========================================================
 r = records[-1]
 grand = r["grand"]
 by_status = r["by_status"]
 period_label = r["period"]
-overall_arpu = (grand["amt"]/grand["act"]) if grand["act"] else 0
+overall_arpu = (grand["amt"] / grand["act"]) if grand["act"] else 0
 
-# --- TOP KPI ROW (Blue for Customers, Green for Revenue & ARPU values) ---
+# Top KPI row: FTTH Customers (blue), Total Revenue + ARPU (green)
 html_top = f"""
-<div style="display:flex;gap:20px;justify-content:space-between;margin-bottom:10px;">
-    <div style="flex:1;background-color:#151924;border:1px solid #1e2331;
-                border-radius:14px;padding:16px;text-align:center;">
-        <p style="margin:0;font-size:16px;color:#b8c2cc;">FTTH Customers</p>
-        <p style="margin:0;font-size:28px;font-weight:700;color:#49d0ff;">{grand['act']:,}</p>
+<div style="display:flex; gap:20px; justify-content:space-between; margin-bottom:10px;">
+
+    <div class='kpi-box' style="flex:1;">
+        <p class='kpi-title'>FTTH Customers</p>
+        <p class='kpi-value-blue'>{grand['act']:,}</p>
     </div>
-    <div style="flex:1;background-color:#151924;border:1px solid #1e2331;
-                border-radius:14px;padding:16px;text-align:center;">
-        <p style="margin:0;font-size:16px;color:#b8c2cc;">Total Revenue</p>
-        <p style="margin:0;font-size:28px;font-weight:700;color:#3ddc97;">${grand['amt']:,.2f}</p>
+
+    <div class='kpi-box' style="flex:1;">
+        <p class='kpi-title'>Total Revenue</p>
+        <p class='kpi-value-green'>${grand['amt']:,.2f}</p>
     </div>
-    <div style="flex:1;background-color:#151924;border:1px solid #1e2331;
-                border-radius:14px;padding:16px;text-align:center;">
-        <p style="margin:0;font-size:16px;color:#b8c2cc;">ARPU</p>
-        <p style="margin:0;font-size:28px;font-weight:700;color:#3ddc97;">${overall_arpu:,.2f}</p>
+
+    <div class='kpi-box' style="flex:1;">
+        <p class='kpi-title'>ARPU</p>
+        <p class='kpi-value-green'>${overall_arpu:,.2f}</p>
     </div>
+
 </div>
 """
 st.markdown(html_top, unsafe_allow_html=True)
 st.divider()
 
-# --- KPI BOXES (ACT/COM/VIP) with green revenue + ARPU values ---
+# ACT / COM / VIP KPI boxes using the same background
 def metric_box(col, title, act, amt, rpc):
     html = f"""
     <div class='kpi-box'>
         <p class='kpi-title'>{title}</p>
-        <p class='kpi-value'>{act:,}</p>
+        <p class='kpi-value-blue'>{act:,}</p>
         <p class='kpi-sub'>
-            <span style='color:#3ddc97;'>Rev ${amt:,.2f}</span> • 
-            <span style='color:#3ddc97;'>ARPU ${rpc:,.2f}</span>
+            Rev ${amt:,.2f} • ARPU ${rpc:,.2f}
         </p>
     </div>
     """
@@ -450,15 +466,21 @@ metric_box(c3, "VIP", by_status["VIP"]["act"], by_status["VIP"]["amt"], by_statu
 # =========================================================
 st.subheader("📈 Visuals")
 
-chart = pd.DataFrame([
-    {"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "ARPU": by_status[s]["rpc"]}
-    for s in ["ACT", "COM", "VIP"]
-])
+chart = pd.DataFrame(
+    [
+        {
+            "Status": s,
+            "Revenue": by_status[s]["amt"],
+            "Customers": by_status[s]["act"],
+            "ARPU": by_status[s]["rpc"],
+        }
+        for s in ["ACT", "COM", "VIP"]
+    ]
+)
 
-# Pioneer palette
 color_scale = alt.Scale(
     domain=["ACT", "COM", "VIP"],
-    range=["#49d0ff", "#3ddc97", "#b8c2cc"]
+    range=["#49d0ff", "#3ddc97", "#b8c2cc"],
 )
 
 l, r2 = st.columns(2)
@@ -484,18 +506,15 @@ with l:
                 alt.Tooltip("Revenue:Q", format="$.2f"),
                 alt.Tooltip("Customers:Q", format=",.0f"),
                 alt.Tooltip("ARPU:Q", format="$.2f"),
-                alt.Tooltip("pct:Q", format=".1%", title="Share")
-            ]
+                alt.Tooltip("pct:Q", format=".1%", title="Share"),
+            ],
         )
     )
 
     pie_labels = (
         pie_base
         .mark_text(radius=95, fontSize=12, fontWeight="bold", color="white")
-        .encode(
-            theta="Revenue:Q",
-            text=alt.Text("label:N")
-        )
+        .encode(theta="Revenue:Q", text=alt.Text("label:N"))
         .transform_calculate(label="datum.Status + ' ' + format(datum.pct, '.1%')")
     )
 
@@ -506,7 +525,6 @@ with r2:
 
     base = alt.Chart(chart).properties(width=300, height=300)
 
-    # Blue fill with green outline
     bars = (
         base
         .mark_bar(
@@ -514,7 +532,7 @@ with r2:
             stroke="#3ddc97",
             strokeWidth=2,
             cornerRadiusTopLeft=6,
-            cornerRadiusTopRight=6
+            cornerRadiusTopRight=6,
         )
         .encode(
             x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
@@ -523,19 +541,18 @@ with r2:
                 alt.Tooltip("Status:N"),
                 alt.Tooltip("Customers:Q", format=",.0f"),
                 alt.Tooltip("Revenue:Q", format="$.2f"),
-                alt.Tooltip("ARPU:Q", format="$.2f")
-            ]
+                alt.Tooltip("ARPU:Q", format="$.2f"),
+            ],
         )
     )
 
-    # Value labels on top of bars
     labels = (
         base
         .mark_text(dy=-6, fontSize=12, color="#e6e6e6", fontWeight="bold")
         .encode(
             x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
             y=alt.Y("Customers:Q"),
-            text=alt.Text("Customers:Q", format=",.0f")
+            text=alt.Text("Customers:Q", format=",.0f"),
         )
     )
 
@@ -546,7 +563,18 @@ with r2:
 # =========================================================
 png_bytes = export_snapshot_png(period_label, grand, by_status)
 pdf_bytes = export_snapshot_pdf(period_label, grand, by_status)
+
 col1, col2 = st.columns(2)
-col1.download_button("Download Snapshot (PNG)", png_bytes, f"ftth_snapshot_{period_label}.png", "image/png")
-col2.download_button("Download Snapshot (PDF)", pdf_bytes, f"ftth_snapshot_{period_label}.pdf", "application/pdf")
+col1.download_button(
+    "Download Snapshot (PNG)",
+    png_bytes,
+    f"ftth_snapshot_{period_label}.png",
+    "image/png",
+)
+col2.download_button(
+    "Download Snapshot (PDF)",
+    pdf_bytes,
+    f"ftth_snapshot_{period_label}.pdf",
+    "application/pdf",
+)
 st.caption("FTTH Dashboard snapshot includes KPIs and charts as a static image.")
