@@ -24,18 +24,99 @@ import requests
 st.set_page_config(page_title="FTTH Dashboard", page_icon="📶", layout="wide")
 st.markdown("""
 <style>
-:root, .stApp { background-color: #0f1115; color: #e6e6e6; }
-section[data-testid="stSidebar"] { background: #0c0e12; }
-[data-testid="stMetric"] { background: #151924; border: 1px solid #1e2331; padding: 16px; border-radius: 14px; }
-[data-testid="stMetricValue"] { color: #49d0ff; font-weight: 700; }
-[data-testid="stMetricLabel"] { color: #b8c2cc; }
-[data-testid="stMetricDelta"] { color: #a3ffd6; }
-.stDataFrame, .stTable { background: #121620; }
-.kpi-box {background-color:#151924;border:1px solid #1e2331;border-radius:14px;
-          padding:16px;margin-bottom:5px;text-align:center;}
-.kpi-title {margin:0;font-size:16px;color:#b8c2cc;}
-.kpi-value {margin:0;font-size:28px;font-weight:700;color:#49d0ff;}
-.kpi-sub {margin:4px 0 0 0;font-size:14px;color:#a3ffd6;}
+/* -------------------------------------------------
+   1. ROOT VARIABLES – dark by default
+   ------------------------------------------------- */
+:root {
+    --bg-app:        #0f1115;
+    --bg-sidebar:    #0c0e12;
+    --bg-card:       #151924;
+    --border-card:   #1e2331;
+    --text-primary:  #e6e6e6;
+    --text-muted:    #b8c2cc;
+    --accent-blue:   #49d0ff;
+    --accent-green:  #3ddc97;
+}
+
+/* -------------------------------------------------
+   2. LIGHT-MODE OVERRIDE
+       (detected via the Streamlit CSS class .light)
+   ------------------------------------------------- */
+.stApp.light,
+.light {
+    --bg-app:        #fafafa;
+    --bg-sidebar:    #f0f2f6;
+    --bg-card:       #ffffff;
+    --border-card:   #e0e0e0;
+    --text-primary:  #212529;
+    --text-muted:    #6c757d;
+    --accent-blue:   #0d6efd;
+    --accent-green:  #198754;
+}
+
+/* -------------------------------------------------
+   3. GLOBAL ELEMENTS
+   ------------------------------------------------- */
+.stApp,
+section[data-testid="stSidebar"] {
+    background: var(--bg-app);
+    color:      var(--text-primary);
+}
+section[data-testid="stSidebar"] {
+    background: var(--bg-sidebar);
+}
+
+/* -------------------------------------------------
+   4. METRICS & CARDS
+   ------------------------------------------------- */
+[data-testid="stMetric"] {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    padding: 16px;
+    border-radius: 14px;
+}
+[data-testid="stMetricValue"] { color: var(--accent-blue); font-weight: 700; }
+[data-testid="stMetricLabel"] { color: var(--text-muted); }
+[data-testid="stMetricDelta"] { color: var(--accent-green); }
+
+.stDataFrame, .stTable { background: var(--bg-card); }
+
+/* -------------------------------------------------
+   5. KPI BOXES (ACT / COM / VIP)
+   ------------------------------------------------- */
+.kpi-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 5px;
+    text-align: center;
+}
+.kpi-title { margin:0; font-size:16px; color:var(--text-muted); }
+.kpi-value { margin:0; font-size:28px; font-weight:700; color:var(--accent-blue); }
+.kpi-sub   { margin:4px 0 0 0; font-size:14px; }
+.kpi-sub span { color:var(--accent-green); }
+
+/* -------------------------------------------------
+   6. TOP KPI ROW (flex boxes)
+   ------------------------------------------------- */
+div[data-testid="column"] > div > div > div > div {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+}
+
+/* -------------------------------------------------
+   7. ALTAIR CHART TEXT (light mode readability)
+   ------------------------------------------------- */
+.vega-bind-name,
+.vega-bind,
+.vega-bind input,
+.vega-bind select,
+.vega-bind option,
+text {
+    fill: var(--text-primary) !important;
+    color: var(--text-primary) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
