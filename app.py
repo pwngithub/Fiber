@@ -142,27 +142,30 @@ def export_snapshot_pdf(period_label, grand, by_status):
     c.setFont("Helvetica-Bold", 14)
     c.drawString(0.75*inch, height-1.0*inch, f"FTTH Dashboard — {period_label}")
     img_reader = ImageReader(io.BytesIO(png_bytes))
-    img_w = width-1.5*inch
-    img_h = img_w*0.55
+    img_w = width-1.5*inch; img_h = img_w*0.55
     c.drawImage(img_reader, 0.75*inch, height-1.0*inch-img_h-0.25*inch,
                 width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
-    c.showPage()
-    c.save()
-    buf.seek(0)
+    c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
 
 # =========================================================
-# GITHUB SAVE HELPER
+# GITHUB HELPERS
 # =========================================================
+def get_github_config():
+    try:
+        gh_cfg = st.secrets["github"]
+        token = gh_cfg["token"]
+        repo = gh_cfg["repo"]          # e.g. "pwngithub/fiber"
+        branch = gh_cfg.get("branch", "main")
+        remote_prefix = gh_cfg.get("file_path", "fiber/")
+        remote_prefix = remote_prefix.rstrip("/") + "/"
+        return token, repo, branch, remote_prefix
+    except Exception:
+        st.warning("GitHub secrets not configured correctly under [github].")
+        return None, None, None, None
+
 def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
-    """
-    Save uploaded file to local 'fiber' folder AND push to GitHub using secrets:
-    [github]
-    token = "..."
-    repo = "pwngithub/fiber"
-    branch = "main"
-    file_path = "fiber/"
-    """
+    """Save uploaded file to local 'fiber' folder AND push to GitHub."""
     # 1) Save locally
     local_folder = "fiber"
     os.makedirs(local_folder, exist_ok=True)
@@ -174,20 +177,12 @@ def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
         st.success(f"Saved file locally: {local_path}")
     except Exception as e:
         st.error(f"Failed to save file locally: {e}")
-        # still try GitHub, but local save failed
 
-    # 2) Push to GitHub (if secrets configured)
-    try:
-        gh_cfg = st.secrets["github"]
-        token = gh_cfg["token"]
-        repo = gh_cfg["repo"]          # e.g. "pwngithub/fiber"
-        branch = gh_cfg.get("branch", "main")
-        remote_prefix = gh_cfg.get("file_path", "fiber/")
-    except Exception:
-        st.warning("GitHub secrets not configured correctly under [github]; skipping GitHub upload.")
+    # 2) Push to GitHub
+    token, repo, branch, remote_prefix = get_github_config()
+    if not token or not repo:
         return
 
-    remote_prefix = remote_prefix.rstrip("/") + "/"
     remote_path = remote_prefix + filename
     api_url = f"https://api.github.com/repos/{repo}/contents/{remote_path}"
 
@@ -197,7 +192,7 @@ def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
     }
     content_b64 = base64.b64encode(file_bytes).decode("utf-8")
 
-    # Check if file exists to include sha for updates
+    # Check if file exists
     sha = None
     get_resp = requests.get(api_url, headers=headers)
     if get_resp.status_code == 200:
@@ -218,34 +213,120 @@ def save_upload_to_local_and_github(filename: str, file_bytes: bytes):
     else:
         st.error(f"GitHub upload failed ({put_resp.status_code}): {put_resp.text}")
 
+def list_github_files_in_fiber():
+    """List files in the configured GitHub fiber/ directory."""
+    token, repo, branch, remote_prefix = get_github_config()
+    if not token or not repo:
+        return []
+
+    # remote_prefix like "fiber/"; for contents API, use just the path without trailing slash
+    path = remote_prefix.rstrip("/")
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json"
+    }
+    resp = requests.get(api_url, headers=headers)
+    if resp.status_code != 200:
+        st.error(f"Failed to list GitHub files ({resp.status_code}): {resp.text}")
+        return []
+
+    items = resp.json()
+    files = [item for item in items if item.get("type") == "file"]
+    return files
+
+def load_github_file_from_github(file_info) -> bytes:
+    """Download a file from GitHub given an item from the contents API."""
+    download_url = file_info.get("download_url")
+    if not download_url:
+        st.error("No download URL found for selected file.")
+        return b""
+    resp = requests.get(download_url)
+    if resp.status_code != 200:
+        st.error(f"Failed to download file from GitHub ({resp.status_code}): {resp.text}")
+        return b""
+    return resp.content
+
 # =========================================================
 # INPUT / PARSE
 # =========================================================
-uploaded_files = st.file_uploader(
-    "Upload 'Subscriber Counts v2' PDFs",
-    type=["pdf"],
-    accept_multiple_files=True
+source_choice = st.radio(
+    "Choose data source",
+    ["Upload new PDFs", "Pick from GitHub"],
+    horizontal=True
 )
 
-if not uploaded_files:
-    st.info("Upload at least one PDF to view FTTH KPIs.")
-    st.stop()
+records: List[Dict] = []
 
-records = []
-for i, up in enumerate(uploaded_files, start=1):
-    pdf_bytes = up.read()
+if source_choice == "Upload new PDFs":
+    uploaded_files = st.file_uploader(
+        "Upload 'Subscriber Counts v2' PDFs",
+        type=["pdf"],
+        accept_multiple_files=True
+    )
 
-    # Save this upload to local fiber/ and GitHub
-    if pdf_bytes:
+    if not uploaded_files:
+        st.info("Upload at least one PDF to view FTTH KPIs.")
+        st.stop()
+
+    for i, up in enumerate(uploaded_files, start=1):
+        pdf_bytes = up.read()
+        if not pdf_bytes:
+            continue
+
+        # Save this upload to local fiber/ and GitHub
         save_upload_to_local_and_github(up.name, pdf_bytes)
 
-    grand, by_status, raw = parse_one_pdf(pdf_bytes)
-    period = _extract_date_label(raw, fallback_label=up.name or f"File {i}")
-    for s in ["ACT", "COM", "VIP"]:
-        c_ = by_status[s]["act"]
-        by_status[s]["rpc"] = (by_status[s]["amt"]/c_) if c_ else 0
-    records.append({"period": period, "grand": grand, "by_status": by_status})
+        # Parse as before
+        grand, by_status, raw = parse_one_pdf(pdf_bytes)
+        period = _extract_date_label(raw, fallback_label=up.name or f"File {i}")
+        for s in ["ACT", "COM", "VIP"]:
+            c_ = by_status[s]["act"]
+            by_status[s]["rpc"] = (by_status[s]["amt"]/c_) if c_ else 0
+        records.append({"period": period, "grand": grand, "by_status": by_status})
 
+else:  # Pick from GitHub
+    gh_files = list_github_files_in_fiber()
+    if not gh_files:
+        st.info("No files found in GitHub fiber/ directory.")
+        st.stop()
+
+    # Filter to PDFs only
+    pdf_items = [f for f in gh_files if f.get("name", "").lower().endswith(".pdf")]
+    if not pdf_items:
+        st.info("No PDF files found in GitHub fiber/ directory.")
+        st.stop()
+
+    name_to_item = {f["name"]: f for f in pdf_items}
+    options = list(name_to_item.keys())
+    selected_names = st.multiselect(
+        "Select one or more PDFs from GitHub fiber/ directory",
+        options=options,
+        default=options[:1] if options else None
+    )
+
+    if not selected_names:
+        st.info("Select at least one PDF from GitHub to continue.")
+        st.stop()
+
+    for i, name in enumerate(selected_names, start=1):
+        file_info = name_to_item[name]
+        pdf_bytes = load_github_file_from_github(file_info)
+        if not pdf_bytes:
+            continue
+        grand, by_status, raw = parse_one_pdf(pdf_bytes)
+        period = _extract_date_label(raw, fallback_label=name)
+        for s in ["ACT", "COM", "VIP"]:
+            c_ = by_status[s]["act"]
+            by_status[s]["rpc"] = (by_status[s]["amt"]/c_) if c_ else 0
+        records.append({"period": period, "grand": grand, "by_status": by_status})
+
+if not records:
+    st.error("No valid records loaded from the selected source.")
+    st.stop()
+
+# Sort by period (string; ISO dates sort nicely)
 records.sort(key=lambda r: r["period"])
 
 # =========================================================
