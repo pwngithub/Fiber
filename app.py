@@ -23,7 +23,6 @@ import requests
 # =========================================================
 st.set_page_config(page_title="FTTH Dashboard", page_icon="📶", layout="wide")
 st.markdown("""
-st.markdown("""
 <style>
 /* -------------------------------------------------
    1. CSS VARIABLES – BLACK background always
