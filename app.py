@@ -23,100 +23,65 @@ import requests
 # =========================================================
 st.set_page_config(page_title="FTTH Dashboard", page_icon="📶", layout="wide")
 st.markdown("""
+st.markdown("""
 <style>
 /* -------------------------------------------------
-   1. CSS VARIABLES – BLACK background always
+   1. CSS VARIABLES - BLACK theme (forced)
    ------------------------------------------------- */
-:root {
-    --bg-app:        #000000;   /* BLACK */
-    --bg-sidebar:    #0a0a0a;
-    --bg-card:       #111111;
-    --border-card:   #222222;
-    --text-primary:  #e6e6e6;
-    --text-muted:    #aaaaaa;
-    --accent-blue:   #49d0ff;
-    --accent-green:  #3ddc97;
+:root, .stApp, .stApp * {
+    --bg-app:        #000000 !important;
+    --bg-sidebar:    #0a0a0a !important;
+    --bg-card:       #111111 !important;
+    --border-card:   #222222 !important;
+    --text-primary:  #e6e6e6 !important;
+    --text-muted:    #aaaaaa !important;
+    --accent-blue:   #49d0ff !important;
+    --accent-green:  #3ddc97 !important;
 }
 
 /* -------------------------------------------------
-   2. LIGHT MODE – still BLACK (forced)
+   2. FORCE BLACK EVEN IN LIGHT MODE
    ------------------------------------------------- */
-.stApp.light,
-.light {
-    --bg-app:        #000000;
-    --bg-sidebar:    #0a0a0a;
-    --bg-card:       #111111;
-    --border-card:   #222222;
-    --text-primary:  #e6e6e6;
-    --text-muted:    #aaaaaa;
-    --accent-blue:   #49d0ff;
-    --accent-green:  #3ddc97;
+.stApp.light, .light, .light * {
+    --bg-app:        #000000 !important;
+    --bg-sidebar:    #0a0a0a !important;
+    --bg-card:       #111111 !important;
+    --border-card:   #222222 !important;
+    --text-primary:  #e6e6e6 !important;
+    --text-muted:    #aaaaaa !important;
 }
 
 /* -------------------------------------------------
-   3. GLOBAL ELEMENTS
+   3. GLOBAL BACKGROUND & TEXT
    ------------------------------------------------- */
-.stApp,
+.stApp, body, .main, section, .block-container {
+    background: #000000 !important;
+    color: #e6e6e6 !important;
+}
 section[data-testid="stSidebar"] {
-    background: var(--bg-app) !important;
-    color:      var(--text-primary);
+    background: #0a0a0a !important;
 }
-section[data-testid="stSidebar"] { background: var(--bg-sidebar) !important; }
 
 /* -------------------------------------------------
-   4. METRICS & CARDS
+   4. CARDS & KPI BOXES
    ------------------------------------------------- */
 [data-testid="stMetric"],
-.kpi-box {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border-card) !important;
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 5px;
-    text-align: center;
-}
-[data-testid="stMetricValue"] { color: var(--accent-blue); font-weight: 700; }
-[data-testid="stMetricLabel"] { color: var(--text-muted); }
-[data-testid="stMetricDelta"] { color: var(--accent-green); }
-
+.kpi-box,
 .stDataFrame,
-.stTable { background: var(--bg-card) !important; }
-
-/* -------------------------------------------------
-   5. KPI BOXES
-   ------------------------------------------------- */
-.kpi-title { margin:0; font-size:16px; color:var(--text-muted); }
-.kpi-value { margin:0; font-size:28px; font-weight:700; color:var(--accent-blue); }
-.kpi-sub   { margin:4px 0 0 0; font-size:14px; }
-.kpi-sub span { color:var(--accent-green); }
-
-/* -------------------------------------------------
-   6. TOP KPI ROW
-   ------------------------------------------------- */
-div[data-testid="column"] > div > div > div > div {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border-card) !important;
+.stTable,
+.css-1d391kg,
+.css-1cpxqw2 {
+    background: #111111 !important;
+    border: 1px solid #222222 !important;
+    color: #e6e6e6 !important;
 }
+.kpi-title { color: #aaaaaa !important; }
+.kpi-value { color: #49d0ff !important; }
+.kpi-sub span { color: #3ddc97 !important; }
 
 /* -------------------------------------------------
-   7. ALTAIR / VEGA – BLACK background + readable text
+   5. ALTAIR / VEGA - FORCE BLACK CANVAS
    ------------------------------------------------- */
-.vega-bind-name,
-.vega-bind,
-.vega-bind input,
-.vega-bind select,
-.vega-bind option,
-text,
-.mark-text,
-.mark-label,
-.vega-title,
-.vega-axis-label,
-.vega-axis-title {
-    fill: var(--text-primary) !important;
-    color: var(--text-primary) !important;
-}
-
-/* Force chart canvas & container to BLACK */
 .vega-bind,
 .vega-visualization,
 .vega-embed,
@@ -124,17 +89,36 @@ text,
 .vega-view,
 .vega-plot,
 .vega-scenegraph,
-.vega-canvas {
-    background: var(--bg-card) !important;
+.vega-canvas,
+.vega-background,
+.vega-rect,
+.vega-mark,
+.vega-axis,
+.vega-title,
+.vega-axis-label,
+.vega-axis-title,
+text,
+.mark-text,
+.mark-label {
+    background: #111111 !important;
+    fill: #e6e6e6 !important;
+    color: #e6e6e6 !important;
+    stroke: #e6e6e6 !important;
+}
+
+/* Force chart container background */
+.vega-embed > div,
+.vega-embed svg,
+.vega-embed canvas {
+    background: #111111 !important;
 }
 
 /* -------------------------------------------------
-   8. SNAPSHOT DOWNLOAD AREA
+   6. DOWNLOAD BUTTONS AREA
    ------------------------------------------------- */
-.snapshot-container {
-    background: var(--bg-card);
-    padding: 20px;
-    border-radius: 14px;
+.css-1y0t6ff, .css-1v0mbdj {
+    background: #111111 !important;
+    border: 1px solid #222222 !important;
 }
 </style>
 """, unsafe_allow_html=True)
