@@ -522,7 +522,7 @@ metric_box(
 )
 
 # =========================================================
-# CHARTS – SUPER-READABLE WHITE TEXT
+# CHARTS – REVENUE SHARE: BLACK LABELS | BAR: WHITE LABELS
 # =========================================================
 st.subheader("Visuals")
 
@@ -537,7 +537,7 @@ vip_color = "#aaaaaa"
 
 l, r2 = st.columns(2)
 
-# ---------- Revenue Share (Pie) ----------
+# ---------- Revenue Share (Pie) – BLACK TEXT ----------
 with l:
     st.markdown("**Revenue Share**")
     chart_f = chart[chart["Revenue"] > 0]
@@ -565,9 +565,9 @@ with l:
         )
         labels = base.mark_text(
             radius=95,
-            fontSize=15,           # bigger
-            fontWeight="normal",   # no bold
-            color="#ffffff",       # pure white
+            fontSize=15,
+            fontWeight="normal",
+            color="#000000"  # BLACK TEXT
         ).encode(
             theta="Revenue:Q",
             text=alt.Text("label:N")
@@ -582,7 +582,7 @@ with l:
     else:
         st.write("No revenue data to display.")
 
-# ---------- Active Customers by Status (Bar) ----------
+# ---------- Active Customers by Status (Bar) – WHITE TEXT ----------
 with r2:
     st.markdown("**Active Customers by Status**")
     base = alt.Chart(chart).properties(width=300, height=300)
@@ -603,10 +603,10 @@ with r2:
         ],
     )
     labels = base.mark_text(
-        dy=-10,                # pull up a bit more
-        fontSize=15,           # bigger
-        fontWeight="normal",   # no bold
-        color="#ffffff",       # pure white
+        dy=-10,
+        fontSize=15,
+        fontWeight="normal",
+        color="#ffffff"  # WHITE TEXT
     ).encode(
         x=alt.X("Status:N", sort=["ACT","COM","VIP"]),
         y=alt.Y("Customers:Q"),
