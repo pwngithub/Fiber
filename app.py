@@ -523,7 +523,7 @@ metric_box(
 )
 
 # =========================================================
-# CHARTS - SAFE: NO ZERO REVENUE CRASH
+# CHARTS - CLEARER LABELS (NO BOLD, LARGER, BRIGHTER)
 # =========================================================
 st.subheader("Visuals")
 chart = pd.DataFrame([
@@ -563,7 +563,12 @@ with l:
             )
         )
         pie_labels = (
-            pie_base.mark_text(radius=95, fontSize=12, fontWeight="bold", color="white")
+            pie_base.mark_text(
+                radius=95,
+                fontSize=14,           # larger
+                fontWeight="normal",   # no bold
+                color="#ffffff"        # pure white for clarity
+            )
             .encode(
                 theta="Revenue:Q",
                 text=alt.Text("label:N")
@@ -598,7 +603,12 @@ with r2:
         )
     )
     labels = (
-        base.mark_text(dy=-6, fontSize=12, color="#e6e6e6", fontWeight="bold")
+        base.mark_text(
+            dy=-8,                 # pull up a bit more
+            fontSize=14,           # larger
+            fontWeight="normal",   # no bold
+            color="#ffffff"        # pure white
+        )
         .encode(
             x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
             y=alt.Y("Customers:Q"),
