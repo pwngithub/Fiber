@@ -522,7 +522,7 @@ metric_box(
 )
 
 # =========================================================
-# CHARTS - MATCH SNAPSHOT STYLE EXACTLY
+# CHARTS – SUPER-READABLE WHITE TEXT
 # =========================================================
 st.subheader("Visuals")
 
@@ -531,115 +531,91 @@ chart = pd.DataFrame([
     for s in ["ACT", "COM", "VIP"]
 ])
 
-# === COLORS FROM SNAPSHOT ===
 act_color = "#49d0ff"
 com_color = "#3ddc97"
 vip_color = "#aaaaaa"
 
 l, r2 = st.columns(2)
 
-# --- Revenue Share (Pie) ---
+# ---------- Revenue Share (Pie) ----------
 with l:
     st.markdown("**Revenue Share**")
-    chart_filtered = chart[chart["Revenue"] > 0]
-    if not chart_filtered.empty:
-        pie_base = (
-            alt.Chart(chart_filtered)
+    chart_f = chart[chart["Revenue"] > 0]
+    if not chart_f.empty:
+        base = (
+            alt.Chart(chart_f)
             .transform_joinaggregate(total="sum(Revenue)")
             .transform_calculate(pct="datum.Revenue / datum.total")
             .properties(width=300, height=300)
         )
-        pie_arcs = (
-            pie_base.mark_arc(innerRadius=60)
-            .encode(
-                theta="Revenue:Q",
-                color=alt.Color(
-                    "Status:N",
-                    scale=alt.Scale(domain=["ACT", "COM", "VIP"], range=[act_color, com_color, vip_color]),
-                    legend=None
-                ),
-                tooltip=[
-                    alt.Tooltip("Status:N"),
-                    alt.Tooltip("Revenue:Q", format="$.2f"),
-                    alt.Tooltip("Customers:Q", format=",.0f"),
-                    alt.Tooltip("ARPU:Q", format="$.2f"),
-                    alt.Tooltip("pct:Q", format=".1%", title="Share")
-                ]
-            )
+        arcs = base.mark_arc(innerRadius=60).encode(
+            theta="Revenue:Q",
+            color=alt.Color(
+                "Status:N",
+                scale=alt.Scale(domain=["ACT","COM","VIP"], range=[act_color, com_color, vip_color]),
+                legend=None,
+            ),
+            tooltip=[
+                alt.Tooltip("Status:N"),
+                alt.Tooltip("Revenue:Q", format="$.2f"),
+                alt.Tooltip("Customers:Q", format=",.0f"),
+                alt.Tooltip("ARPU:Q", format="$.2f"),
+                alt.Tooltip("pct:Q", format=".1%", title="Share"),
+            ],
         )
-        pie_labels = (
-            pie_base.mark_text(
-                radius=95,
-                fontSize=14,
-                fontWeight="normal",
-                color="#e6e6e6"
-            )
-            .encode(
-                theta="Revenue:Q",
-                text=alt.Text("label:N")
-            )
-            .transform_calculate(label="datum.Status + ' ' + format(datum.pct, '.1%')")
+        labels = base.mark_text(
+            radius=95,
+            fontSize=15,           # bigger
+            fontWeight="normal",   # no bold
+            color="#ffffff",       # pure white
+        ).encode(
+            theta="Revenue:Q",
+            text=alt.Text("label:N")
+        ).transform_calculate(
+            label="datum.Status + ' ' + format(datum.pct, '.1%')"
         )
         st.altair_chart(
-            (pie_arcs + pie_labels).configure_view(
-                strokeWidth=0
-            ).configure_axis(
-                labelColor="#e6e6e6",
-                titleColor="#e6e6e6",
-                gridColor="#222222",
-                domainColor="#222222"
-            ),
-            use_container_width=True
+            (arcs + labels).configure_view(strokeWidth=0)
+            .configure_axis(labelColor="#ffffff", titleColor="#ffffff", gridColor="#222222", domainColor="#222222"),
+            use_container_width=True,
         )
     else:
         st.write("No revenue data to display.")
 
-# --- Active Customers by Status (Bar) ---
+# ---------- Active Customers by Status (Bar) ----------
 with r2:
     st.markdown("**Active Customers by Status**")
     base = alt.Chart(chart).properties(width=300, height=300)
-    bars = (
-        base.mark_bar(
-            color=act_color,
-            stroke=com_color,
-            strokeWidth=2,
-            cornerRadiusTopLeft=6,
-            cornerRadiusTopRight=6
-        )
-        .encode(
-            x=alt.X("Status:N", sort=["ACT", "COM", "VIP"], axis=alt.Axis(labelColor="#e6e6e6", titleColor="#e6e6e6")),
-            y=alt.Y("Customers:Q", axis=alt.Axis(labelColor="#e6e6e6", titleColor="#e6e6e6", gridColor="#222222")),
-            tooltip=[
-                alt.Tooltip("Status:N"),
-                alt.Tooltip("Customers:Q", format=",.0f"),
-                alt.Tooltip("Revenue:Q", format="$.2f"),
-                alt.Tooltip("ARPU:Q", format="$.2f")
-            ]
-        )
+    bars = base.mark_bar(
+        color=act_color,
+        stroke=com_color,
+        strokeWidth=2,
+        cornerRadiusTopLeft=6,
+        cornerRadiusTopRight=6,
+    ).encode(
+        x=alt.X("Status:N", sort=["ACT","COM","VIP"], axis=alt.Axis(labelColor="#ffffff", titleColor="#ffffff")),
+        y=alt.Y("Customers:Q", axis=alt.Axis(labelColor="#ffffff", titleColor="#ffffff", gridColor="#222222")),
+        tooltip=[
+            alt.Tooltip("Status:N"),
+            alt.Tooltip("Customers:Q", format=",.0f"),
+            alt.Tooltip("Revenue:Q", format="$.2f"),
+            alt.Tooltip("ARPU:Q", format="$.2f"),
+        ],
     )
-    labels = (
-        base.mark_text(
-            dy=-8,
-            fontSize=14,
-            fontWeight="normal",
-            color="#e6e6e6"
-        )
-        .encode(
-            x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
-            y=alt.Y("Customers:Q"),
-            text=alt.Text("Customers:Q", format=",.0f")
-        )
+    labels = base.mark_text(
+        dy=-10,                # pull up a bit more
+        fontSize=15,           # bigger
+        fontWeight="normal",   # no bold
+        color="#ffffff",       # pure white
+    ).encode(
+        x=alt.X("Status:N", sort=["ACT","COM","VIP"]),
+        y=alt.Y("Customers:Q"),
+        text=alt.Text("Customers:Q", format=",.0f"),
     )
     st.altair_chart(
-        (bars + labels).configure_view(
-            strokeWidth=0
-        ).configure_axis(
-            labelColor="#e6e6e6",
-            titleColor="#e6e6e6",
-            gridColor="#222222",
-            domainColor="#222222"
-        ),
-        use_container_width=True
+        (bars + labels).configure_view(strokeWidth=0)
+        .configure_axis(labelColor="#ffffff", titleColor="#ffffff", gridColor="#222222", domainColor="#222222"),
+        use_container_width=True,
     )
 
 # =========================================================
