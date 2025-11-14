@@ -224,7 +224,6 @@ def build_snapshot_figure(period_label, grand, by_status):
     ax_left.set_title("Active Customers by Status", color='#e6e6e6')
     ax_left.set_ylabel("Customers", color='#e6e6e6')
 
-    # === FIXED: Filter out zero revenue slices ===
     rev_values = [by_status[s]["amt"] for s in statuses]
     labels = statuses
     colors = ['#49d0ff', '#3ddc97', '#aaaaaa']
@@ -237,7 +236,7 @@ def build_snapshot_figure(period_label, grand, by_status):
             labels=labels_filtered,
             autopct="%1.1f%%",
             colors=colors_filtered,
-            textprops={'color': '#e6e6e6', 'weight': 'bold'}
+            textprops={'color': '#e6e6e6', 'weight': 'normal', 'size': 11}
         )
         for autotext in autotexts:
             autotext.set_color('#000000')
