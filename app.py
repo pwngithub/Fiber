@@ -28,28 +28,26 @@ st.markdown("""
    1. CSS VARIABLES - BLACK theme (forced)
    ------------------------------------------------- */
 :root, .stApp, .stApp * {
-    --bg-app:        #000000 !important;
-    --bg-sidebar:    #0a0a0a !important;
-    --bg-card:       #111111 !important;
-    --border-card:   #222222 !important;
-    --text-primary:  #e6e6e6 !important;
-    --text-muted:    #aaaaaa !important;
-    --accent-blue:   #49d0ff !important;
-    --accent-green:  #3ddc97 !important;
+    --bg-app: #000000 !important;
+    --bg-sidebar: #0a0a0a !important;
+    --bg-card: #111111 !important;
+    --border-card: #222222 !important;
+    --text-primary: #e6e6e6 !important;
+    --text-muted: #aaaaaa !important;
+    --accent-blue: #49d0ff !important;
+    --accent-green: #3ddc97 !important;
 }
-
 /* -------------------------------------------------
    2. FORCE BLACK EVEN IN LIGHT MODE
    ------------------------------------------------- */
 .stApp.light, .light, .light * {
-    --bg-app:        #000000 !important;
-    --bg-sidebar:    #0a0a0a !important;
-    --bg-card:       #111111 !important;
-    --border-card:   #222222 !important;
-    --text-primary:  #e6e6e6 !important;
-    --text-muted:    #aaaaaa !important;
+    --bg-app: #000000 !important;
+    --bg-sidebar: #0a0a0a !important;
+    --bg-card: #111111 !important;
+    --border-card: #222222 !important;
+    --text-primary: #e6e6e6 !important;
+    --text-muted: #aaaaaa !important;
 }
-
 /* -------------------------------------------------
    3. GLOBAL BACKGROUND & TEXT
    ------------------------------------------------- */
@@ -60,7 +58,6 @@ st.markdown("""
 section[data-testid="stSidebar"] {
     background: #0a0a0a !important;
 }
-
 /* -------------------------------------------------
    4. CARDS & KPI BOXES
    ------------------------------------------------- */
@@ -75,7 +72,6 @@ section[data-testid="stSidebar"] {
 .kpi-title { color: #aaaaaa !important; }
 .kpi-value { color: #49d0ff !important; }
 .kpi-sub span { color: #3ddc97 !important; }
-
 /* -------------------------------------------------
    5. ALTAIR / VEGA - FORCE BLACK CANVAS
    ------------------------------------------------- */
@@ -104,7 +100,6 @@ text,
 .vega-embed canvas {
     background: #111111 !important;
 }
-
 /* -------------------------------------------------
    6. DOWNLOAD BUTTON AREA
    ------------------------------------------------- */
@@ -137,7 +132,6 @@ def black_theme():
             'view': {'stroke': '#222222'}
         }
     }
-
 alt.themes.register('black_theme', black_theme)
 alt.themes.enable('black_theme')
 
@@ -194,7 +188,7 @@ def parse_one_pdf(pdf_bytes: bytes):
     return grand, by_status, text
 
 # =========================================================
-# SNAPSHOT FIGURE - BLACK BACKGROUND
+# SNAPSHOT FIGURE - FIXED: NO CRASH ON ZERO REVENUE
 # =========================================================
 def build_snapshot_figure(period_label, grand, by_status):
     fig = plt.figure(figsize=(10, 6), dpi=150, facecolor='#111111')
@@ -234,15 +228,27 @@ def build_snapshot_figure(period_label, grand, by_status):
     ax_left.set_title("Active Customers by Status", color='#e6e6e6')
     ax_left.set_ylabel("Customers", color='#e6e6e6')
 
-    wedges, texts, autotexts = ax_right.pie(
-        [by_status[s]["amt"] for s in statuses],
-        labels=statuses,
-        autopct="%1.1f%%",
-        colors=['#49d0ff', '#3ddc97', '#aaaaaa'],
-        textprops={'color': '#e6e6e6', 'weight': 'bold'}
-    )
-    for text in autotexts:
-        text.set_color('#000000')  # black % on colored wedges
+    # === FIXED: Filter out zero revenue slices ===
+    rev_values = [by_status[s]["amt"] for s in statuses]
+    labels = statuses
+    colors = ['#49d0ff', '#3ddc97', '#aaaaaa']
+
+    filtered = [(r, l, c) for r, l, c in zip(rev_values, labels, colors) if r > 0]
+    if filtered:
+        rev_filtered, labels_filtered, colors_filtered = zip(*filtered)
+        wedges, texts, autotexts = ax_right.pie(
+            rev_filtered,
+            labels=labels_filtered,
+            autopct="%1.1f%%",
+            colors=colors_filtered,
+            textprops={'color': '#e6e6e6', 'weight': 'bold'}
+        )
+        for autotext in autotexts:
+            autotext.set_color('#000000')  # black % on wedge
+    else:
+        ax_right.text(0.5, 0.5, "No Revenue", transform=ax_right.transAxes,
+                      ha='center', va='center', color='#666666', fontsize=12)
+
     ax_right.set_title("Revenue Share", color='#e6e6e6')
 
     return fig
@@ -500,60 +506,63 @@ metric_box(c2, "COM — Active Commercial", by_status["COM"]["act"], by_status["
 metric_box(c3, "VIP", by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
 
 # =========================================================
-# CHARTS
+# CHARTS - SAFE: NO ZERO REVENUE CRASH
 # =========================================================
 st.subheader("Visuals")
 chart = pd.DataFrame([
     {"Status": s, "Revenue": by_status[s]["amt"], "Customers": by_status[s]["act"], "ARPU": by_status[s]["rpc"]}
     for s in ["ACT", "COM", "VIP"]
 ])
-
 color_scale = alt.Scale(
     domain=["ACT", "COM", "VIP"],
     range=["#49d0ff", "#3ddc97", "#aaaaaa"]
 )
 
 l, r2 = st.columns(2)
+
+# --- Revenue Share (Altair) ---
 with l:
     st.markdown("**Revenue Share**")
-    pie_base = (
-        alt.Chart(chart)
-        .transform_joinaggregate(total="sum(Revenue)")
-        .transform_calculate(pct="datum.Revenue / datum.total")
-        .properties(width=300, height=300)
-    )
-    pie_arcs = (
-        pie_base
-        .mark_arc(innerRadius=60)
-        .encode(
-            theta="Revenue:Q",
-            color=alt.Color("Status:N", scale=color_scale, legend=None),
-            tooltip=[
-                alt.Tooltip("Status:N"),
-                alt.Tooltip("Revenue:Q", format="$.2f"),
-                alt.Tooltip("Customers:Q", format=",.0f"),
-                alt.Tooltip("ARPU:Q", format="$.2f"),
-                alt.Tooltip("pct:Q", format=".1%", title="Share")
-            ]
+    chart_filtered = chart[chart["Revenue"] > 0]
+    if not chart_filtered.empty:
+        pie_base = (
+            alt.Chart(chart_filtered)
+            .transform_joinaggregate(total="sum(Revenue)")
+            .transform_calculate(pct="datum.Revenue / datum.total")
+            .properties(width=300, height=300)
         )
-    )
-    pie_labels = (
-        pie_base
-        .mark_text(radius=95, fontSize=12, fontWeight="bold", color="white")
-        .encode(
-            theta="Revenue:Q",
-            text=alt.Text("label:N")
+        pie_arcs = (
+            pie_base.mark_arc(innerRadius=60)
+            .encode(
+                theta="Revenue:Q",
+                color=alt.Color("Status:N", scale=color_scale, legend=None),
+                tooltip=[
+                    alt.Tooltip("Status:N"),
+                    alt.Tooltip("Revenue:Q", format="$.2f"),
+                    alt.Tooltip("Customers:Q", format=",.0f"),
+                    alt.Tooltip("ARPU:Q", format="$.2f"),
+                    alt.Tooltip("pct:Q", format=".1%", title="Share")
+                ]
+            )
         )
-        .transform_calculate(label="datum.Status + ' ' + format(datum.pct, '.1%')")
-    )
-    st.altair_chart(pie_arcs + pie_labels, use_container_width=True)
+        pie_labels = (
+            pie_base.mark_text(radius=95, fontSize=12, fontWeight="bold", color="white")
+            .encode(
+                theta="Revenue:Q",
+                text=alt.Text("label:N")
+            )
+            .transform_calculate(label="datum.Status + ' ' + format(datum.pct, '.1%')")
+        )
+        st.altair_chart(pie_arcs + pie_labels, use_container_width=True)
+    else:
+        st.write("No revenue data to display.")
 
+# --- Active Customers by Status (Altair) ---
 with r2:
     st.markdown("**Active Customers by Status**")
     base = alt.Chart(chart).properties(width=300, height=300)
     bars = (
-        base
-        .mark_bar(
+        base.mark_bar(
             color="#49d0ff",
             stroke="#3ddc97",
             strokeWidth=2,
@@ -572,8 +581,7 @@ with r2:
         )
     )
     labels = (
-        base
-        .mark_text(dy=-6, fontSize=12, color="#e6e6e6", fontWeight="bold")
+        base.mark_text(dy=-6, fontSize=12, color="#e6e6e6", fontWeight="bold")
         .encode(
             x=alt.X("Status:N", sort=["ACT", "COM", "VIP"]),
             y=alt.Y("Customers:Q"),
