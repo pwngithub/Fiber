@@ -107,8 +107,8 @@ text,
 </style>
 """, unsafe_allow_html=True)
 
-st.title("signal_cellular_alt FTTH Dashboard")
-st.caption("Extracts ACT / COM / VIP counts & revenue from **Subscriber Counts v2** PDFs and visualizes KPIs for FTTH services.")
+st.title("FTTH Dashboard")
+st.caption("Extracts ACT / COM / VIP counts & revenue from PDFs and visualizes KPIs for FTTH services.")
 
 # =========================================================
 # ALTAIR BLACK THEME (GLOBAL)
