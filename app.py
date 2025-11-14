@@ -62,16 +62,12 @@ section[data-testid="stSidebar"] {
    4. CARDS & KPI BOXES
    ------------------------------------------------- */
 [data-testid="stMetric"],
-.kpi-box,
 .stDataFrame,
 .stTable {
     background: #111111 !important;
     border: 1px solid #222222 !important;
     color: #e6e6e6 !important;
 }
-.kpi-title { color: #aaaaaa !important; }
-.kpi-value { color: #49d0ff !important; }
-.kpi-sub span { color: #3ddc97 !important; }
 /* -------------------------------------------------
    5. ALTAIR / VEGA - FORCE BLACK CANVAS
    ------------------------------------------------- */
@@ -244,7 +240,7 @@ def build_snapshot_figure(period_label, grand, by_status):
             textprops={'color': '#e6e6e6', 'weight': 'bold'}
         )
         for autotext in autotexts:
-            autotext.set_color('#000000')  # black % on wedge
+            autotext.set_color('#000000')
     else:
         ax_right.text(0.5, 0.5, "No Revenue", transform=ax_right.transAxes,
                       ha='center', va='center', color='#666666', fontsize=12)
@@ -277,7 +273,7 @@ def export_snapshot_pdf(period_label, grand, by_status):
     c = canvas.Canvas(buf, pagesize=letter)
     width, height = letter
 
-    c.setFillColorRGB(0, 0, 0)  # BLACK background
+    c.setFillColorRGB(0, 0, 0)
     c.rect(0, 0, width, height, fill=1, stroke=0)
 
     c.setTitle(f"FTTH Dashboard - {period_label}")
@@ -486,24 +482,45 @@ html_top = f"""
 st.markdown(html_top, unsafe_allow_html=True)
 st.divider()
 
-# --- KPI BOXES ---
-def metric_box(col, title, act, amt, rpc):
+# --- KPI BOXES (SAME STYLE AS TOP ROW) ---
+def metric_box(col, title, value, subtitle1, subtitle2):
     html = f"""
-    <div class='kpi-box'>
-        <p class='kpi-title'>{title}</p>
-        <p class='kpi-value'>{act:,}</p>
-        <p class='kpi-sub'>
-            <span style='color:#3ddc97;'>Rev ${amt:,.2f}</span> •
-            <span style='color:#3ddc97;'>ARPU ${rpc:,.2f}</span>
+    <div style="background-color:#111111;border:1px solid #222222;
+                border-radius:14px;padding:16px;text-align:center;">
+        <p style="margin:0;font-size:16px;color:#aaaaaa;">{title}</p>
+        <p style="margin:0;font-size:28px;font-weight:700;color:#49d0ff;">{value:,}</p>
+        <p style="margin:0;font-size:14px;color:#3ddc97;">
+            {subtitle1} • {subtitle2}
         </p>
     </div>
     """
     col.markdown(html, unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
-metric_box(c1, "ACT — Active Residential", by_status["ACT"]["act"], by_status["ACT"]["amt"], by_status["ACT"]["rpc"])
-metric_box(c2, "COM — Active Commercial", by_status["COM"]["act"], by_status["COM"]["amt"], by_status["COM"]["rpc"])
-metric_box(c3, "VIP", by_status["VIP"]["act"], by_status["VIP"]["amt"], by_status["VIP"]["rpc"])
+
+metric_box(
+    c1,
+    "ACT — Active Residential",
+    by_status["ACT"]["act"],
+    f"Rev ${by_status['ACT']['amt']:,.2f}",
+    f"ARPU ${by_status['ACT']['rpc']:,.2f}"
+)
+
+metric_box(
+    c2,
+    "COM — Active Commercial",
+    by_status["COM"]["act"],
+    f"Rev ${by_status['COM']['amt']:,.2f}",
+    f"ARPU ${by_status['COM']['rpc']:,.2f}"
+)
+
+metric_box(
+    c3,
+    "VIP",
+    by_status["VIP"]["act"],
+    f"Rev ${by_status['VIP']['amt']:,.2f}",
+    f"ARPU ${by_status['VIP']['rpc']:,.2f}"
+)
 
 # =========================================================
 # CHARTS - SAFE: NO ZERO REVENUE CRASH
