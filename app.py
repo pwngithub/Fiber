@@ -20,7 +20,7 @@ import requests
 # =========================================================
 # APP CONFIG + BLACK THEME
 # =========================================================
-st.set_page_config(page_title="FTTH Dashboard", page_icon="signal_cellular_alt", layout="wide")
+st.set_page_config(page_title="FTTH Dashboard11", page_icon="signal_cellular_alt", layout="wide")
 
 st.markdown("""
 <style>
